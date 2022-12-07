@@ -31,7 +31,8 @@ joint_names:
 - ur5_wrist_2_joint
 - ur5_wrist_3_joint
 
-mounted_robot_ik:
+mounted_robot_ik: # parameter for the mounted_robot
   type: ik_solver/Ur5IkSolver
-  desired_solutions: 32 # number of desired solution
+  desired_solutions: 32 # number of desired solution for this chain
+  #frames are taken from the first part of the yaml file.
 ```
