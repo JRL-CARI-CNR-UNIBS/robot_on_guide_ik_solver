@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <arg name="debug" default="false" />
+  <arg name="service_name" default="ur_ik" />
+  <arg if="$(arg debug)" name="launch_prefix" default="xterm -e gdb -ex run  --args" />
+  <arg unless="$(arg debug)" name="launch_prefix" default="" />
+
+
+<node pkg="ik_solver"  type="ik_solver_node" name="$(arg service_name)" output="screen" launch-prefix="$(arg launch_prefix)" >
+  <rosparam command="load" file="$(find robot_on_guide_ik_solver)/config/params.yaml"/>
+</node>
+</launch>
