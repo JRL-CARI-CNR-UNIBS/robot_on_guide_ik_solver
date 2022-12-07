@@ -12,6 +12,9 @@ When an IK is called:
 - the process is repeated untill desired solutions number is reached,
 
 
+
+## Example
+
 ```
 base_frame: world # base frame of the chain
 robot_base_frame: ur5_base_link # robot base frame
@@ -29,7 +32,6 @@ joint_names:
 - ur5_wrist_3_joint
 
 mounted_robot_ik:
-  # type: ik_solver/RosdynIkSolver
   type: ik_solver/Ur5IkSolver
   desired_solutions: 32 # number of desired solution
 ```
