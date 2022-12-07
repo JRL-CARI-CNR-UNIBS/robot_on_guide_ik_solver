@@ -2,13 +2,19 @@
 
 IK for robot mounted on guides. It creates to chain:
 
-- 1st: base_frame -> robot_base_frame using rosdyn
-- 2nd: robot_base_frame->tool_frame using another ik_solver plugins
+- 1st: __guide__ base_frame -> robot_base_frame using rosdyn
+- 2nd: __mounted robot__ robot_base_frame->tool_frame using another ik_solver plugins
+
+When an IK is called:
+- __guide__ generate a random FK
+- transformation T_robotbase_tool=T_robotbase_base*T_base_tool
+- IK of T_robotbase_tool for __mounted robot__ is computed
+- the process is repeated untill desired solutions number is reached,
 
 
 ```
 base_frame: world # base frame of the chain
-robot_base_frame: ur5_base_link # robot base frame 
+robot_base_frame: ur5_base_link # robot base frame
 flange_frame: ur5_tool0 # end frame of the chain
 tool_frame: tip # destination frame of the IK (it should be rigid attached to flange_frame)
 type: ik_solver/RobotOnGuideIkSolver
