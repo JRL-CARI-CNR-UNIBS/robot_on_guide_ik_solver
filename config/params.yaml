@@ -1,5 +1,5 @@
 base_frame: world # base frame of the chain
-robot_base_frame: ur5_base_link # base frame of the chain
+robot_base_frame: ur5_base_link # robot base frame 
 flange_frame: ur5_tool0 # end frame of the chain
 tool_frame: tip # destination frame of the IK (it should be rigid attached to flange_frame)
 type: ik_solver/RobotOnGuideIkSolver
