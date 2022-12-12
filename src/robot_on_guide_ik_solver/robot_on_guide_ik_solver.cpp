@@ -37,6 +37,7 @@ namespace ik_solver
   inline bool RobotOnGuideIkSolver::customConfig()
   {
 
+    ROS_DEBUG("Start creating %s IK Solver",nh_.getNamespace().c_str());
     if (!nh_.hasParam(nh_.getNamespace()+"/mounted_robot_ik"))
     {
       ROS_INFO("%s/robot_ik is not defined",nh_.getNamespace().c_str());
@@ -66,12 +67,13 @@ namespace ik_solver
     std::string plugin_name;
     if (!robot_nh_.getParam("type",plugin_name))
     {
-      ROS_INFO("%s/type is not defined",robot_nh_.getNamespace().c_str());
+      ROS_ERROR("%s/type is not defined",robot_nh_.getNamespace().c_str());
       return -1;
     }
 
     Eigen::Vector3d gravity;
     gravity << 0,0,-9.806;
+
     chain_ = rosdyn::createChain(model_,base_frame_,robot_base_frame,gravity);
     q_.resize(chain_->getActiveJointsNumber());
     q_.setZero();
@@ -108,7 +110,7 @@ namespace ik_solver
 
     chain_->setInputJointsName(ordered_guide_names);
 
-    ROS_INFO("%s creating ik plugin for mounted robot",robot_nh_.getNamespace().c_str());
+    ROS_DEBUG("%s creating ik plugin for mounted robot",robot_nh_.getNamespace().c_str());
     robot_ik_solver_ = ikloader_->createInstance(plugin_name);
 
     if (!robot_ik_solver_->config(robot_nh_))
@@ -122,6 +124,9 @@ namespace ik_solver
 
     dq_=0.5*(chain_->getQMax()-chain_->getQMin());
     mean_q_=0.5*(chain_->getQMax()+chain_->getQMin());
+
+    ROS_DEBUG("Created %s IK Solver",nh_.getNamespace().c_str());
+
     return true;
 
   }
@@ -133,17 +138,25 @@ namespace ik_solver
                                                            const int& max_stall_iterations)
   {
     std::vector<Eigen::VectorXd > solutions;
-
+    std::vector<Eigen::VectorXd> seeds_robot;
     for (int idx=0;idx<max_stall_iterations;idx++)
     {
       if (!nh_.ok())
         break;
-
-      q_.setRandom();
-      q_=mean_q_+dq_.cwiseProduct(q_);
+      seeds_robot.clear();
+      if (idx<(int)seeds.size())
+      {
+        q_=seeds.at(idx).head(q_.size());
+        seeds_robot.push_back(seeds.at(idx).tail(seeds.at(idx).size()-q_.size()));
+      }
+      else
+      {
+        q_.setRandom();
+        q_=mean_q_+dq_.cwiseProduct(q_);
+      }
       Eigen::Affine3d T_base_robotbase=chain_->getTransformation(q_);
       Eigen::Affine3d T_robotbase_flange=T_base_robotbase.inverse()*T_base_flange;
-      std::vector<Eigen::VectorXd> robot_sol=robot_ik_solver_->getIk(T_robotbase_flange,seeds,desired_solutions,max_stall_iterations);
+      std::vector<Eigen::VectorXd> robot_sol=robot_ik_solver_->getIk(T_robotbase_flange,seeds_robot,desired_solutions,max_stall_iterations);
 
       for (const Eigen::VectorXd& q_robot: robot_sol)
       {
