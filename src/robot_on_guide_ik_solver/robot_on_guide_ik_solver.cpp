@@ -75,8 +75,8 @@ namespace ik_solver
     gravity << 0,0,-9.806;
 
     chain_ = rosdyn::createChain(model_,base_frame_,robot_base_frame,gravity);
-    q_.resize(chain_->getActiveJointsNumber());
-    q_.setZero();
+    guide_seed_.resize(chain_->getActiveJointsNumber());
+    guide_seed_.setZero();
 
     std::vector<std::string> guide_names=chain_->getActiveJointsName();
     std::vector<std::string> ordered_guide_names;
@@ -138,39 +138,75 @@ namespace ik_solver
                                                            const int& max_stall_iterations)
   {
     std::vector<Eigen::VectorXd > solutions;
+    solutions.clear();
     std::vector<Eigen::VectorXd> seeds_robot;
-    for (int idx=0;idx<max_stall_iterations;idx++)
+
+    int idx =0;
+    Eigen::VectorXd last_guide_seed(guide_seed_.size());
+    int idx_seed=0;
+    for (idx=0;idx<max_stall_iterations;idx++)
     {
       if (!nh_.ok())
         break;
       seeds_robot.clear();
-      if (idx<(int)seeds.size())
+
+      bool use_random=false;
+      if (idx_seed<(int)seeds.size())
       {
-        q_=seeds.at(idx).head(q_.size());
-        seeds_robot.push_back(seeds.at(idx).tail(seeds.at(idx).size()-q_.size()));
+
+        while(true)
+        {
+          const Eigen::VectorXd& full_seed=seeds.at(idx_seed);
+          guide_seed_=full_seed.head(guide_seed_.size());
+          seeds_robot.push_back(full_seed.tail(full_seed.size()-guide_seed_.size()));
+          if ((guide_seed_-last_guide_seed).norm()>1e-6)
+            break;
+          else
+          {
+            if (idx_seed<(int)seeds.size()-1)
+              idx_seed++; // discard repeated seeds
+            else
+            {
+              use_random=true;
+              break;
+            }
+          }
+        }
+
+        last_guide_seed=guide_seed_;
       }
       else
+        use_random=true;
+
+      if (use_random)
       {
-        q_.setRandom();
-        q_=mean_q_+dq_.cwiseProduct(q_);
+        guide_seed_.setRandom();
+        guide_seed_=mean_q_+dq_.cwiseProduct(guide_seed_);
       }
-      Eigen::Affine3d T_base_robotbase=chain_->getTransformation(q_);
+
+      Eigen::Affine3d T_base_robotbase=chain_->getTransformation(guide_seed_);
       Eigen::Affine3d T_robotbase_flange=T_base_robotbase.inverse()*T_base_flange;
       std::vector<Eigen::VectorXd> robot_sol=robot_ik_solver_->getIk(T_robotbase_flange,seeds_robot,desired_solutions,max_stall_iterations);
 
       for (const Eigen::VectorXd& q_robot: robot_sol)
       {
-
-        Eigen::VectorXd q_tot(q_.size()+q_robot.size());
-        q_tot<<q_,q_robot;
+        Eigen::VectorXd q_tot(guide_seed_.size()+q_robot.size());
+        q_tot<<guide_seed_,q_robot;
         solutions.push_back(q_tot);
+
       }
+      idx_seed++;
+
       if ((int)solutions.size()>desired_solutions)
       {
         break;
       }
 
     }
+
+    if (solutions.size()==0)
+      ROS_INFO("seed size =%zu, solution size=%zu, iteration=%d",seeds.size(),solutions.size(),idx);
+
     return solutions;
   }
 

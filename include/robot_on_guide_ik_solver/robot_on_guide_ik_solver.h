@@ -59,7 +59,7 @@ protected:
   boost::shared_ptr<ik_solver::IkSolver> robot_ik_solver_;
   ros::NodeHandle robot_nh_;
 
-  Eigen::VectorXd q_;
+  Eigen::VectorXd guide_seed_;
   Eigen::VectorXd mean_q_;
   Eigen::VectorXd dq_;
 
