@@ -144,6 +144,8 @@ namespace ik_solver
     int idx =0;
     Eigen::VectorXd last_guide_seed(guide_seed_.size());
     int idx_seed=0;
+
+
     for (idx=0;idx<max_stall_iterations;idx++)
     {
       if (!nh_.ok())
@@ -186,6 +188,7 @@ namespace ik_solver
 
       Eigen::Affine3d T_base_robotbase=chain_->getTransformation(guide_seed_);
       Eigen::Affine3d T_robotbase_flange=T_base_robotbase.inverse()*T_base_flange;
+
       std::vector<Eigen::VectorXd> robot_sol=robot_ik_solver_->getIk(T_robotbase_flange,seeds_robot,desired_solutions,max_stall_iterations);
 
       for (const Eigen::VectorXd& q_robot: robot_sol)
