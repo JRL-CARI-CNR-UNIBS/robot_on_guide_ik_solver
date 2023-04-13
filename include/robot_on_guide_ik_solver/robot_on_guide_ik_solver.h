@@ -52,6 +52,9 @@ public:
                                      const std::vector<Eigen::VectorXd> & seeds,
                                      const int& desired_solutions,
                                      const int& max_stall_iterations) override;
+
+
+  virtual Eigen::Affine3d getFK(const Eigen::VectorXd& s) override;
 protected:
   virtual bool customConfig() override;
 
@@ -65,7 +68,6 @@ protected:
 
 
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
-
 
 };
 }  //  namespace ik_solver

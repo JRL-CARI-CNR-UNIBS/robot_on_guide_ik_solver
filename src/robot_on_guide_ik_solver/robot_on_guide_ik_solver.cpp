@@ -214,4 +214,14 @@ namespace ik_solver
   }
 
 
+
+  Eigen::Affine3d RobotOnGuideIkSolver::getFK(const Eigen::VectorXd& s)
+  {
+    Eigen::VectorXd s_guide=s.head(chain_->getActiveJointsNumber());
+    Eigen::VectorXd s_robot=s.tail(s.size()-chain_->getActiveJointsNumber());
+    Eigen::Affine3d T_base_robotbase=chain_->getTransformation(s_guide);
+    Eigen::Affine3d T_robotbase_flange=robot_ik_solver_->getFK(s_robot);
+    return T_base_robotbase*T_robotbase_flange;
+
+  }
 }   // end namespace ik_solver
