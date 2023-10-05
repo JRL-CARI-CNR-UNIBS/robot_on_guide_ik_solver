@@ -208,7 +208,9 @@ namespace ik_solver
     }
 
     if (solutions.size()==0)
+    {
       ROS_INFO("seed size =%zu, solution size=%zu, iteration=%d",seeds.size(),solutions.size(),idx);
+    }
 
     return solutions;
   }
