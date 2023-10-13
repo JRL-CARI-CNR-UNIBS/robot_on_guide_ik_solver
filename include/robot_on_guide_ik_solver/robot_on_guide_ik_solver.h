@@ -28,7 +28,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
 
-#include <ros/ros.h>
+#include <array>
 #include <tf/transform_listener.h>
 #include <Eigen/Geometry>
 #include <ik_solver_msgs/GetIk.h>
@@ -39,32 +39,52 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <pluginlib/class_loader.h>
 #include <rosdyn_core/primitives.h>
 
+#include <ros/node_handle.h>
+
 #define TOLERANCE 1e-3
 namespace ik_solver
 {
-
-
-
-class RobotOnGuideIkSolver: public IkSolver
+class RobotOnGuideIkSolver : public IkSolver
 {
 public:
   virtual std::vector<Eigen::VectorXd> getIk(const Eigen::Affine3d& T_base_flange,
-                                     const std::vector<Eigen::VectorXd> & seeds,
-                                     const int& desired_solutions,
-                                     const int& max_stall_iterations) override;
+                                             const std::vector<Eigen::VectorXd>& seeds, const int& desired_solutions,
+                                             const int& max_stall_iterations) override;
 
-
+  virtual std::vector<Eigen::VectorXd> getIkSafeMT(bool& stop, const size_t& thread_id, const Eigen::Affine3d& T_base_flange,
+                                                   const std::vector<Eigen::VectorXd>& seeds,
+                                                   const int& desired_solutions,
+                                                   const int& max_stall_iterations) override;
+                                                   
   virtual Eigen::Affine3d getFK(const Eigen::VectorXd& s) override;
+
 protected:
   virtual bool customConfig() override;
 
-  rosdyn::ChainPtr chain_;
-  boost::shared_ptr<ik_solver::IkSolver> robot_ik_solver_;
+  struct MT
+  {
+    rosdyn::ChainPtr chain_;
+    boost::shared_ptr<ik_solver::IkSolver> robot_ik_solver_;
+    Eigen::VectorXd guide_seed_;
+    Eigen::VectorXd mean_q_;
+    Eigen::VectorXd dq_;
+  };
+
+  const rosdyn::ChainPtr& chain(const size_t& i = 0) const { return mt_.at(i).chain_;}
+  const boost::shared_ptr<ik_solver::IkSolver>& robot_ik_solver(const size_t& i = 0) const { return mt_.at(i).robot_ik_solver_;}
+  const Eigen::VectorXd& guide_seed(const size_t& i = 0) const { return mt_.at(i).guide_seed_;}
+  const Eigen::VectorXd& mean_q(const size_t& i = 0) const { return mt_.at(i).mean_q_;}
+  const Eigen::VectorXd& dq(const size_t& i = 0) const { return mt_.at(i).dq_;}
+
+  rosdyn::ChainPtr& chain(const size_t& i = 0) { return mt_.at(i).chain_;}
+  boost::shared_ptr<ik_solver::IkSolver>& robot_ik_solver(const size_t& i = 0) { return mt_.at(i).robot_ik_solver_;}
+  Eigen::VectorXd& guide_seed(const size_t& i = 0) { return mt_.at(i).guide_seed_;}
+  Eigen::VectorXd& mean_q(const size_t& i = 0) { return mt_.at(i).mean_q_;}
+  Eigen::VectorXd& dq(const size_t& i = 0) { return mt_.at(i).dq_;}
+
   ros::NodeHandle robot_nh_;
 
-  Eigen::VectorXd guide_seed_;
-  Eigen::VectorXd mean_q_;
-  Eigen::VectorXd dq_;
+  std::array<MT,IkSolver::MAX_NUM_THREADS> mt_;
 
 
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
