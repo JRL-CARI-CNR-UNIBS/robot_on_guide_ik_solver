@@ -44,15 +44,19 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define TOLERANCE 1e-3
 namespace ik_solver
 {
+
+
 class RobotOnGuideIkSolver : public IkSolver
 {
 public:
-  virtual std::vector<Eigen::VectorXd> getIk(const Eigen::Affine3d& T_base_flange,
-                                             const std::vector<Eigen::VectorXd>& seeds, const int& desired_solutions,
+  virtual IkConfigurations getIk(const Eigen::Affine3d& T_base_flange,
+                                             const IkConfigurations& seeds,
+                                             const int& desired_solutions,
                                              const int& max_stall_iterations) override;
 
-  virtual std::vector<Eigen::VectorXd> getIkSafeMT(bool& stop, const size_t& thread_id, const Eigen::Affine3d& T_base_flange,
-                                                   const std::vector<Eigen::VectorXd>& seeds,
+  virtual IkConfigurations getIkSafeMT(bool& stop, 
+                                                   const Eigen::Affine3d& T_base_flange,
+                                                   const IkConfigurations& seeds,
                                                    const int& desired_solutions,
                                                    const int& max_stall_iterations) override;
                                                    
@@ -61,33 +65,36 @@ public:
 protected:
   virtual bool customConfig() override;
 
-  struct MT
-  {
-    rosdyn::ChainPtr chain_;
-    boost::shared_ptr<ik_solver::IkSolver> robot_ik_solver_;
-    Eigen::VectorXd guide_seed_;
-    Eigen::VectorXd mean_q_;
-    Eigen::VectorXd dq_;
-  };
-
-  const rosdyn::ChainPtr& chain(const size_t& i = 0) const { return mt_.at(i).chain_;}
-  const boost::shared_ptr<ik_solver::IkSolver>& robot_ik_solver(const size_t& i = 0) const { return mt_.at(i).robot_ik_solver_;}
-  const Eigen::VectorXd& guide_seed(const size_t& i = 0) const { return mt_.at(i).guide_seed_;}
-  const Eigen::VectorXd& mean_q(const size_t& i = 0) const { return mt_.at(i).mean_q_;}
-  const Eigen::VectorXd& dq(const size_t& i = 0) const { return mt_.at(i).dq_;}
-
-  rosdyn::ChainPtr& chain(const size_t& i = 0) { return mt_.at(i).chain_;}
-  boost::shared_ptr<ik_solver::IkSolver>& robot_ik_solver(const size_t& i = 0) { return mt_.at(i).robot_ik_solver_;}
-  Eigen::VectorXd& guide_seed(const size_t& i = 0) { return mt_.at(i).guide_seed_;}
-  Eigen::VectorXd& mean_q(const size_t& i = 0) { return mt_.at(i).mean_q_;}
-  Eigen::VectorXd& dq(const size_t& i = 0) { return mt_.at(i).dq_;}
-
   ros::NodeHandle robot_nh_;
 
-  std::array<MT,IkSolver::MAX_NUM_THREADS> mt_;
-
+  struct MT
+  {
+    rosdyn::ChainPtr guide_chain_;
+    boost::shared_ptr<ik_solver::IkSolver> robot_ik_solver_;
+    Eigen::VectorXd robot_lb_;
+    Eigen::VectorXd robot_ub_;
+  };
 
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
 
+  std::array<MT,IkSolver::MAX_NUM_THREADS> mt_;
+  const rosdyn::ChainPtr& guide_chain(const size_t& i = 0) const { return mt_.at(i).guide_chain_;}
+  const boost::shared_ptr<ik_solver::IkSolver>& robot_ik_solver(const size_t& i = 0) const { return mt_.at(i).robot_ik_solver_;}
+  const Eigen::VectorXd& robot_lb(const size_t& i = 0) const { return mt_.at(i).robot_lb_;}
+  const Eigen::VectorXd& robot_ub(const size_t& i = 0) const { return mt_.at(i).robot_ub_;}
+
+  rosdyn::ChainPtr& chain(const size_t& i = 0) { return mt_.at(i).guide_chain_;}
+  boost::shared_ptr<ik_solver::IkSolver>& robot_ik_solver(const size_t& i = 0) { return mt_.at(i).robot_ik_solver_;}
+  Eigen::VectorXd& robot_lb(const size_t& i = 0) { return mt_.at(i).robot_lb_;}
+  Eigen::VectorXd& robot_ub(const size_t& i = 0) { return mt_.at(i).robot_ub_;}
+
+  std::array<IkConfigurations,IkSolver::MAX_NUM_THREADS > mt_solutions_;
+  std::array<bool,IkSolver::MAX_NUM_THREADS> thread_status_;
+  virtual std::vector<Eigen::VectorXd> getIkSafeMT(bool& stop, const size_t& thread_id, 
+                                                   const Eigen::Affine3d& T_base_flange,
+                                                   const std::vector<Eigen::VectorXd>& seeds,
+                                                   const int& desired_solutions,
+                                                   const int& max_stall_iterations);
+                                                   
 };
 }  //  namespace ik_solver
