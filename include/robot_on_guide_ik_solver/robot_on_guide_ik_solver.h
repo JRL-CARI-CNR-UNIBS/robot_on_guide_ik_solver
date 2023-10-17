@@ -31,6 +31,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
 #include <Eigen/Geometry>
+#include "Eigen/src/Core/Matrix.h"
 #include <ik_solver_msgs/GetIk.h>
 #include <ik_solver_msgs/GetIkArray.h>
 #include <tf_conversions/tf_eigen.h>
@@ -58,16 +59,29 @@ public:
 protected:
   virtual bool customConfig() override;
 
-  rosdyn::ChainPtr chain_;
+  rosdyn::ChainPtr guide_chain_;
   boost::shared_ptr<ik_solver::IkSolver> robot_ik_solver_;
   ros::NodeHandle robot_nh_;
 
-  Eigen::VectorXd guide_seed_;
   Eigen::VectorXd mean_q_;
   Eigen::VectorXd dq_;
 
+  Eigen::Affine3d lower_guide_extremity_;
+  Eigen::Affine3d upper_guide_extremity_;
+  Eigen::VectorXd guide_main_direction_;
+
 
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
+
+  std::vector<Eigen::VectorXd> getIkSharedSeed(const Eigen::Affine3d& T_base_flange,
+                                     const std::vector<Eigen::VectorXd> & seeds,
+                                     const int& desired_solutions,
+                                     const int& max_stall_iterations);
+
+  std::vector<Eigen::VectorXd> getIkProjectedSeed(const Eigen::Affine3d& T_base_flange,
+                                      const std::vector<Eigen::VectorXd> & seeds,
+                                      const int& desired_solutions,
+                                      const int& max_stall_iterations);
 
 };
 }  //  namespace ik_solver
