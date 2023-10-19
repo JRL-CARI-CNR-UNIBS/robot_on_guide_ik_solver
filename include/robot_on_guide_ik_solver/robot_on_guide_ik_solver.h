@@ -83,5 +83,10 @@ protected:
                                       const int& desired_solutions,
                                       const int& max_stall_iterations);
 
+  std::string seed_generation_algorithm_;
+  struct ramndom_local_params
+  {
+    double max_range_weight_ = 0.1; //
+  } ramndom_local_params_;
 };
 }  //  namespace ik_solver

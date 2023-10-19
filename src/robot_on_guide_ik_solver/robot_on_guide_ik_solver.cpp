@@ -26,6 +26,10 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <algorithm>
+#include <cstring>
+#include <vector>
+ 
 #include <robot_on_guide_ik_solver/robot_on_guide_ik_solver.h>
 #include <pluginlib/class_list_macros.h>
 #include "Eigen/src/Core/Matrix.h"
@@ -35,6 +39,121 @@ PLUGINLIB_EXPORT_CLASS(ik_solver::RobotOnGuideIkSolver, ik_solver::IkSolver)
 
 namespace ik_solver
 {
+
+const std::string WHITESPACE = " \n\r\t\f\v";
+ 
+std::string ltrim(const std::string &s, const std::string& what=WHITESPACE)
+{
+    size_t start = s.find_first_not_of(what);
+    return (start == std::string::npos) ? "" : s.substr(start);
+}
+ 
+std::string rtrim(const std::string &s, const std::string& what=WHITESPACE)
+{
+    size_t end = s.find_last_not_of(what);
+    return (end == std::string::npos) ? "" : s.substr(0, end + 1);
+}
+ 
+std::string trim(const std::string &s, const std::string& what=WHITESPACE)
+{
+    return rtrim(ltrim(s));
+}
+
+template<typename T>
+bool is_the_same(const T& lhs, const T& rhs)
+{
+  return rhs == lhs;
+}
+
+
+template<>
+bool is_the_same(const std::vector<std::string>& lhs, const std::vector<std::string>& rhs)
+{
+  if(lhs.size()!=rhs.size())
+  {
+    return false;
+  }
+
+  for(size_t i=0;i<lhs.size();i++)
+  {
+    if(lhs.at(i) != rhs.at(i))
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
+
+std::string to_string(const std::string& s)
+{
+  return s;
+}
+
+std::string to_string(const std::vector<std::string>& ss)
+{
+  std::string ret = "[";
+  for(const auto & s : ss) ret += s +",";
+  return ret +"]";
+}
+
+
+template<typename T> 
+bool check_and_set_duplicate_params(const std::string& nh_ns, const std::string& robot_ns, const std::string& param_name, const T& nh_val)
+{
+  std::string pn = robot_ns + param_name;
+  T val;
+  if(ros::param::get(pn, val))
+  {
+    if( !is_the_same(val, nh_val) )
+    {
+      ROS_ERROR("%s has been found both in the Composed Robot namespace (%s) and in the Mounted Robot namespace (%s) but they are different (%s and %s). Put it only in the Composed Robot namespace, or alternatuively be sure they are the same!", 
+        pn.c_str(), nh_ns.c_str(), robot_ns.c_str(), to_string(val).c_str(), to_string(nh_val).c_str());
+      return false;
+    }
+  }
+  else
+  {
+    ros::param::set(pn, nh_val);
+  }
+  return true;
+}
+
+bool order_joint_names(std::vector<std::string>& joint_names, std::vector<std::string>& guide_names, std::vector<std::string>& robot_names)
+{
+  //std::vector<std::string> guide_names = guide_chain_->getActiveJointsName();
+  std::vector<std::string> ordered_guide_names;
+  std::vector<std::string> ordered_robot_names;
+  for (const auto & s : joint_names)
+  {
+    if (std::find(guide_names.begin(), guide_names.end(), s) != guide_names.end())
+    {
+      ordered_guide_names.push_back(s);
+    }
+    else
+    {
+      ordered_robot_names.push_back(s);
+    }
+  }
+  if (ordered_guide_names.size() != guide_names.size())
+  {
+    return false;
+  }
+
+  guide_names = ordered_guide_names;
+  robot_names = ordered_robot_names;
+
+  joint_names.clear();
+  for (auto& s : ordered_guide_names)
+  {
+    joint_names.push_back(s);
+  }
+  for (auto& s : ordered_robot_names)
+  {
+    joint_names.push_back(s);
+  }
+  return true;
+}
 
 double percentage_distance_from(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Vector3d& v)
 {
@@ -73,83 +192,106 @@ double sin_interpolation(const double& lb, const double& ub, const size_t& i_ste
 inline bool RobotOnGuideIkSolver::customConfig()
 {
   ROS_DEBUG("Start creating %s IK Solver", nh_.getNamespace().c_str());
-  if (!nh_.hasParam(nh_.getNamespace() + "/mounted_robot_ik"))
-  {
-    ROS_INFO("%s/robot_ik is not defined", nh_.getNamespace().c_str());
-    return false;
-  }
 
-  std::string robot_base_frame;
-  if (!nh_.getParam("robot_base_frame", robot_base_frame))
-  {
-    ROS_ERROR("%s/robot_base_frame is not specified", nh_.getNamespace().c_str());
-    return false;
-  }
+  // ============================================================================
   robot_nh_ = ros::NodeHandle(nh_.getNamespace() + "/mounted_robot_ik");
 
-  ikloader_.reset(new pluginlib::ClassLoader<ik_solver::IkSolver>("ik_solver", "ik_solver::IkSolver"));
+  std::map<std::string, std::vector<std::string>> mandatory_params{ 
+    {"/" , {}},
+    {nh_.getNamespace(), { "mounted_robot_ik", "seed_generation_algorithm"}},
+    {robot_nh_.getNamespace(), { "type", "base_frame"}}
+  };
 
-  robot_nh_.setParam("base_frame", robot_base_frame);
-
-  std::string tmp;
-  nh_.getParam("flange_frame", tmp);
-  robot_nh_.setParam("flange_frame", tmp);
-  nh_.getParam("tool_frame", tmp);
-  robot_nh_.setParam("tool_frame", tmp);
-
-  std::string plugin_name;
-  if (!robot_nh_.getParam("type", plugin_name))
+  for(const auto& pp : mandatory_params)
   {
-    ROS_ERROR("%s/type is not defined", robot_nh_.getNamespace().c_str());
-    return -1;
+    std::string ns = rtrim(trim(pp.first),"/")+"/";
+    for(const auto & p : pp.second )
+    {
+      std::string pn = ns + ltrim(p,"/");
+      if (!ros::param::has(ns + p))
+      {
+        ROS_ERROR("%s not found in rosparam server", pn.c_str());
+        return false;
+      }
+    }
   }
+
+  std::string root_ns = "/";
+  std::string nh_ns = rtrim(nh_.getNamespace(),"/") + "/";
+  std::string robot_ns = rtrim(robot_nh_.getNamespace(),"/") + "/";
+
+  std::map<std::string, std::string > _frames{
+    {"flange_frame", flange_frame_},
+    {"tool_frame", tool_frame_},
+  };
+
+  for(const auto & _f: _frames)
+  {
+    if(!check_and_set_duplicate_params(nh_ns, robot_ns, _f.first, _f.second))
+    {
+      return false;
+    }
+  }
+
+  // INIT GUIDE CHAIN
+  std::string mounted_robot_base_frame;
+  ros::param::get(robot_ns + "base_frame", mounted_robot_base_frame);
 
   Eigen::Vector3d gravity;
-  gravity << 0, 0, -9.806;
+  gravity << 0, 0, -9.806;  
+  guide_chain_ = rosdyn::createChain(model_, base_frame_, mounted_robot_base_frame, gravity);
 
-  guide_chain_ = rosdyn::createChain(model_, base_frame_, robot_base_frame, gravity);
-
-
+  // Chack and Reoirde joint_names 
   std::vector<std::string> guide_names = guide_chain_->getActiveJointsName();
-  std::vector<std::string> ordered_guide_names;
-  std::vector<std::string> ordered_robot_names;
-  for (std::string& s : joint_names_)
+  std::vector<std::string> robot_names{};
+  if(!order_joint_names(joint_names_, guide_names, robot_names))
   {
-    if (std::find(guide_names.begin(), guide_names.end(), s) != guide_names.end())
-      ordered_guide_names.push_back(s);
-    else
-      ordered_robot_names.push_back(s);
-  }
-  if (ordered_guide_names.size() != guide_names.size())
-  {
-    ROS_ERROR("not all the guides names are listed in %s/joint_names", nh_.getNamespace().c_str());
+    ROS_ERROR("Not all the guides names are listed in %s/joint_names", nh_.getNamespace().c_str());
     ROS_ERROR("Guide names: ");
     for (std::string& s : guide_names)
+    {
       ROS_ERROR(" - %s", s.c_str());
+    }
     ROS_ERROR("joint_names: ");
     for (std::string& s : joint_names_)
+    {
       ROS_ERROR(" - %s", s.c_str());
+    }
     return false;
   }
-  robot_nh_.setParam("joint_names", ordered_robot_names);
 
-  joint_names_.clear();
-  for (auto& s : ordered_guide_names)
-    joint_names_.push_back(s);
-  for (auto& s : ordered_robot_names)
-    joint_names_.push_back(s);
+  // already re-ordered as they must be in the inherited ws
+  if(!check_and_set_duplicate_params(nh_ns, robot_ns, "joint_names", robot_names))
+  {
+    return false;
+  }
 
-  guide_chain_->setInputJointsName(ordered_guide_names);
-
+  // INIT MOUNTED ROBOT
+  std::string plugin_name;
+  ros::param::get(robot_ns + "type", plugin_name);
+  ikloader_.reset(new pluginlib::ClassLoader<ik_solver::IkSolver>("ik_solver", "ik_solver::IkSolver"));
+  
   ROS_DEBUG("%s creating ik plugin for mounted robot", robot_nh_.getNamespace().c_str());
   robot_ik_solver_ = ikloader_->createInstance(plugin_name);
-
   if (!robot_ik_solver_->config(robot_nh_))
   {
     ROS_ERROR("%s: error configuring mounted robot ik", nh_.getNamespace().c_str());
     return false;
   }
 
+  // FNISH GUIDE SETUP
+  guide_chain_->setInputJointsName(guide_names);
+  // ======================================================
+
+  ros::param::get(nh_ns + "seed_generation_algorithm", seed_generation_algorithm_);
+  if(seed_generation_algorithm_=="random_local")
+  {
+    ramndom_local_params_.max_range_weight_ = 0.01;
+    ros::param::get(nh_ns + "max_range_weight", ramndom_local_params_.max_range_weight_);
+  }
+
+  
+  //
   dq_ = 0.5 * (guide_chain_->getQMax() - guide_chain_->getQMin());
   mean_q_ = 0.5 * (guide_chain_->getQMax() + guide_chain_->getQMin());
 
@@ -254,8 +396,7 @@ std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIkProjectedSeed(const Eige
   Eigen::VectorXd _guide_q_seed_0 =
       2.0 * percentage_distance_from(T_base_flange, lower_guide_extremity_, guide_main_direction_) * dq_;
 
-  double max_range_weight = 0.1;
-  double range_weight = max_range_weight;
+  double range_weight = ramndom_local_params_.max_range_weight_;
   for (size_t idx = 0; idx < max_stall_iterations; idx++)
   {
     Eigen::VectorXd _guide_q_seed;
@@ -287,7 +428,7 @@ std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIkProjectedSeed(const Eige
       break;
     }
 
-    range_weight = robot_sol.size() ? max_range_weight / double(robot_sol.size()) : max_range_weight;
+    range_weight = robot_sol.size() ? ramndom_local_params_.max_range_weight_ / double(robot_sol.size()) : ramndom_local_params_.max_range_weight_;
   }
 
   return solutions;
@@ -297,13 +438,13 @@ std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& 
                                                          const std::vector<Eigen::VectorXd>& seeds,
                                                          const int& desired_solutions, const int& max_stall_iterations)
 {
-  int manuel = 1;
-  if (manuel)
+  if (seed_generation_algorithm_=="recursive")
   {
-    return getIkProjectedSeed(T_base_flange, seeds, desired_solutions, max_stall_iterations);
+    return getIkSharedSeed(T_base_flange, seeds, desired_solutions, max_stall_iterations);
   }
-  else
+  else // if (seed_generation_algorithm_=="random_local")
   {
+    
     return getIkProjectedSeed(T_base_flange, seeds, desired_solutions, max_stall_iterations);
   }
 }
