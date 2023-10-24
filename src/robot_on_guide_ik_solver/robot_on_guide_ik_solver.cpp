@@ -283,6 +283,7 @@ inline bool RobotOnGuideIkSolver::customConfig()
   guide_chain_->setInputJointsName(guide_names);
   // ======================================================
 
+  seed_generation_algorithm_ = "recursive";
   ros::param::get(nh_ns + "seed_generation_algorithm", seed_generation_algorithm_);
   if(seed_generation_algorithm_=="random_local")
   {
@@ -378,10 +379,10 @@ std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIkSharedSeed(const Eigen::
     }
   }
 
-  if (solutions.size() == 0)
-  {
-    ROS_INFO("seed size =%zu, solution size=%zu, iteration=%d", seeds.size(), solutions.size(), idx);
-  }
+  // if (solutions.size() == 0)
+  // {
+  //   ROS_INFO("seed size =%zu, solution size=%zu, iteration=%d", seeds.size(), solutions.size(), idx);
+  // }
 
   return solutions;
 }
