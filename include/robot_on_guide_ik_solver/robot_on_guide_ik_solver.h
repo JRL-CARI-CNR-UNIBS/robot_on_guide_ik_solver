@@ -45,17 +45,22 @@ namespace ik_solver
 {
 
 
-
 class RobotOnGuideIkSolver: public IkSolver
 {
 public:
-  virtual std::vector<Eigen::VectorXd> getIk(const Eigen::Affine3d& T_base_flange,
-                                     const std::vector<Eigen::VectorXd> & seeds,
+  virtual IkConfigurations getIk(const Eigen::Affine3d& T_base_flange,
+                                     const IkConfigurations& seeds,
                                      const int& desired_solutions,
                                      const int& max_stall_iterations) override;
 
+  virtual IkConfigurations getIkSafeMT(bool& stop, 
+                                                   const Eigen::Affine3d& T_base_flange,
+                                                   const IkConfigurations& seeds,
+                                                   const int& desired_solutions,
+                                                   const int& max_stall_iterations) override;
 
   virtual Eigen::Affine3d getFK(const Eigen::VectorXd& s) override;
+
 protected:
   virtual bool customConfig() override;
 
@@ -72,6 +77,14 @@ protected:
 
 
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
+
+  std::array<IkConfigurations,IkSolver::MAX_NUM_THREADS > mt_solutions_;
+  std::array<bool,IkSolver::MAX_NUM_THREADS> thread_status_;
+  virtual std::vector<Eigen::VectorXd> getIkSafeMT(bool& stop, const size_t& thread_id, 
+                                                   const Eigen::Affine3d& T_base_flange,
+                                                   const std::vector<Eigen::VectorXd>& seeds,
+                                                   const int& desired_solutions,
+                                                   const int& max_stall_iterations);
 
   std::vector<Eigen::VectorXd> getIkSharedSeed(const Eigen::Affine3d& T_base_flange,
                                      const std::vector<Eigen::VectorXd> & seeds,

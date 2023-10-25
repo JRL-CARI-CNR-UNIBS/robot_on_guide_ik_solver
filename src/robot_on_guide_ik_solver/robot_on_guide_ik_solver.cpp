@@ -32,16 +32,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  
 #include <robot_on_guide_ik_solver/robot_on_guide_ik_solver.h>
 #include <pluginlib/class_list_macros.h>
-#include "Eigen/src/Core/Matrix.h"
-#include "Eigen/src/Geometry/Transform.h"
 
 PLUGINLIB_EXPORT_CLASS(ik_solver::RobotOnGuideIkSolver, ik_solver::IkSolver)
 
 namespace ik_solver
 {
-
 const std::string WHITESPACE = " \n\r\t\f\v";
- 
+
 std::string ltrim(const std::string &s, const std::string& what=WHITESPACE)
 {
     size_t start = s.find_first_not_of(what);
@@ -189,6 +186,46 @@ double sin_interpolation(const double& lb, const double& ub, const size_t& i_ste
   return lb + dd;
 }
 
+void filter_seeds(const std::vector<Eigen::VectorXd>& full_seeds, const size_t& guide_seed_dof, std::vector<Eigen::VectorXd>& guide_seeds, std::vector<Eigen::VectorXd>& robot_seeds)
+{
+  std::vector<Eigen::VectorXd> ret;
+  for(size_t i=0; i<full_seeds.size(); i++)
+  {
+    Eigen::VectorXd guide_seed = full_seeds.at(i).head(guide_seed_dof);
+    Eigen::VectorXd robot_seed = full_seeds.at(i).tail(full_seeds.at(i).size()-guide_seed_dof);
+    if(i==0)
+    {
+      guide_seeds.push_back(guide_seed);
+      robot_seeds.push_back( robot_seed);      
+    }
+    else
+    {
+      if (((guide_seed - guide_seeds.back()).norm() > 1e-6) || ((robot_seed - robot_seeds.back()).norm() > 1e-6) )
+      {
+        guide_seeds.push_back(guide_seed);
+        robot_seeds.push_back( robot_seed);
+      }
+    }
+  }
+}
+
+Eigen::VectorXd random(const Eigen::VectorXd& v, const Eigen::VectorXd& lb, const Eigen::VectorXd& ub, double range_percentage)
+{
+  Eigen::VectorXd ret = v;
+  Eigen::VectorXd rand = Eigen::VectorXd(v.size()).setRandom();
+  Eigen::VectorXd ub_dist_v = range_percentage * (ub - v);
+  Eigen::VectorXd lb_dist_v = range_percentage * (v - lb);
+  
+  for(size_t i=0;i<v.size(); i++)
+  {
+    ret(i) += rand(i)>=0 ? rand(i) * ub_dist_v(i) : rand(i) * lb_dist_v(i);
+  }
+  
+  return ret;
+}
+
+
+//==========================================================================================================================
 inline bool RobotOnGuideIkSolver::customConfig()
 {
   ROS_DEBUG("Start creating %s IK Solver", nh_.getNamespace().c_str());
@@ -238,11 +275,14 @@ inline bool RobotOnGuideIkSolver::customConfig()
   ros::param::get(robot_ns + "base_frame", mounted_robot_base_frame);
 
   Eigen::Vector3d gravity;
-  gravity << 0, 0, -9.806;  
-  guide_chain_ = rosdyn::createChain(model_, base_frame_, mounted_robot_base_frame, gravity);
+  gravity << 0, 0, -9.806;
 
-  // Chack and Reoirde joint_names 
-  std::vector<std::string> guide_names = guide_chain_->getActiveJointsName();
+  for(auto & t : mt_)
+  {
+    t.guide_chain_ = rosdyn::createChain(model_, base_frame_, robot_base_frame, gravity);
+  }
+  
+  std::vector<std::string> guide_names = chain()->getActiveJointsName();
   std::vector<std::string> robot_names{};
   if(!order_joint_names(joint_names_, guide_names, robot_names))
   {
@@ -291,40 +331,123 @@ inline bool RobotOnGuideIkSolver::customConfig()
     ros::param::get(nh_ns + "max_range_weight", ramndom_local_params_.max_range_weight_);
   }
 
-  
-  //
-  dq_ = 0.5 * (guide_chain_->getQMax() - guide_chain_->getQMin());
-  mean_q_ = 0.5 * (guide_chain_->getQMax() + guide_chain_->getQMin());
+  for(size_t i=0; i< mt_.size(); i++)
+  {
+    thread_status_.at(i) = false;
+    mt_.at(i).guide_chain_->setInputJointsName(ordered_guide_names);
+    ROS_DEBUG("%s creating ik plugin for mounted robot", robot_nh_.getNamespace().c_str());
+    mt_.at(i).robot_ik_solver_ = ikloader_->createInstance(plugin_name);
 
-  lower_guide_extremity_ = guide_chain_->getTransformation(guide_chain_->getQMin());
-  upper_guide_extremity_ = guide_chain_->getTransformation(guide_chain_->getQMax());
-  guide_main_direction_ = upper_guide_extremity_.translation() - lower_guide_extremity_.translation();
+    ros::NodeHandle ik_solver_nh(robot_nh_, "mt" + std::to_string(i));
+    if (!mt_.at(i).robot_ik_solver_->config(ik_solver_nh, robot_nh_.getNamespace())) // all takes the data from the same naespace, but they create services in private ns
+    {
+      ROS_ERROR("%s: error configuring mounted robot ik", nh_.getNamespace().c_str());
+      return false;
+    }
+  }
+
+  // =============================
+    for(auto & t : mt_)
+  {
+    t.robot_lb_.resize(ordered_robot_names.size());
+    t.robot_ub_.resize(ordered_robot_names.size());
+  }
+  rosdyn::ChainPtr robot_chain = rosdyn::createChain(model_, robot_base_frame, flange_frame, gravity);
+  const auto & robot_jns = robot_chain->getActiveJointsName();
+  for(size_t k=0; k<ordered_robot_names.size(); k++)
+  {
+    auto it = std::find(robot_jns.begin(), robot_jns.end(), ordered_robot_names.at(k));
+    if(it != robot_jns.end())
+    {
+      size_t ji=std::distance(robot_jns.begin(), it);
+      for(auto & t : mt_)
+      {
+        t.robot_lb_(k) = robot_chain->getQMin()(ji);
+        t.robot_ub_(k) = robot_chain->getQMax()(ji);
+      }
+    }
+  
+  }
+
+  std::string jns = "[";
+  for(const auto & jn : ordered_robot_names)
+  {
+    jns += jn + ",";
+  }
+  jns += "]";
+  ROS_INFO("Robot Chain has %zu DOF: %s", ordered_robot_names.size(), jns.c_str());
+
+  jns = "[";
+  for(const auto & jn : ordered_guide_names)
+  {
+    jns += jn + ",";
+  }
+  jns += "]";
+  ROS_INFO("Guide Chain has %u DOF: %s", chain()->getActiveJointsNumber(), jns.c_str());
+  // =================================
 
   ROS_DEBUG("Created %s IK Solver", nh_.getNamespace().c_str());
 
   return true;
 }
 
+
+std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange,
+                                                         const std::vector<Eigen::VectorXd>& seeds,
+                                                         const int& desired_solutions, const int& max_stall_iterations)
+{
+  if (seed_generation_algorithm_=="recursive")
+  {
+    return getIkSharedSeed(T_base_flange, seeds, desired_solutions, max_stall_iterations);
+  }
+  else // if (seed_generation_algorithm_=="random_local")
+  {
+    
+    return getIkProjectedSeed(T_base_flange, seeds, desired_solutions, max_stall_iterations);
+  }
+}
+
+std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIkSafeMT(bool& stop,
+                                                               const Eigen::Affine3d& T_base_flange,
+                                                               const std::vector<Eigen::VectorXd>& seeds,
+                                                               const int& desired_solutions,
+                                                               const int& max_stall_iterations)
+{
+  while(true)
+  {
+    for(size_t i=0;i<IkSolver::MAX_NUM_THREADS;i++)
+    {
+      if(!thread_status_.at(i))
+      {
+        thread_status_.at(i) = true;
+        mt_solutions_.at(i) = this->getIkSafeMT(stop, i, T_base_flange, seeds, desired_solutions, max_stall_iterations);
+        thread_status_.at(i) = false;
+        return mt_solutions_.at(i);
+      }
+   }
+  }
+}
+
+// ============================================================================================================
+// ============================================================================================================
 std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIkSharedSeed(const Eigen::Affine3d& T_base_flange,
-                                                                   const std::vector<Eigen::VectorXd>& seeds,
-                                                                   const int& desired_solutions,
-                                                                   const int& max_stall_iterations)
+                                                               const std::vector<Eigen::VectorXd>& seeds,
+                                                               const int& desired_solutions,
+                                                               const int& max_stall_iterations)
 {
   std::vector<Eigen::VectorXd> solutions;
   solutions.clear();
-  std::vector<Eigen::VectorXd> seeds_robot;
 
-  int idx = 0;
-  Eigen::VectorXd last_guide_seed(guide_chain_->getActiveJointsNumber());
-  Eigen::VectorXd guide_seed(guide_chain_->getActiveJointsNumber());
-  guide_seed.setZero();
-  int idx_seed = 0;
+  std::vector<Eigen::VectorXd> _robot_seeds;
+  std::vector<Eigen::VectorXd> _guide_seeds;
+  filter_seeds(seeds, guide_chain(thread_id)->getActiveJointsNumber(), _guide_seeds, _robot_seeds);
+  
 
-  for (idx = 0; idx < max_stall_iterations; idx++)
+  for (size_t idx = 0; idx < (size_t)max_stall_iterations && nh_.ok(); idx++)
   {
     if (!nh_.ok())
       break;
-    seeds_robot.clear();
+    _robot_seeds.clear();
 
     bool use_random = false;
     if (idx_seed < (int)seeds.size())
@@ -333,7 +456,7 @@ std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIkSharedSeed(const Eigen::
       {
         const Eigen::VectorXd& full_seed = seeds.at(idx_seed);
         guide_seed = full_seed.head(guide_seed.size());
-        seeds_robot.push_back(full_seed.tail(full_seed.size() - guide_seed.size()));
+        _robot_seeds.push_back(full_seed.tail(full_seed.size() - guide_seed.size()));
         if ((guide_seed - last_guide_seed).norm() > 1e-6)
           break;
         else
@@ -363,7 +486,7 @@ std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIkSharedSeed(const Eigen::
     Eigen::Affine3d T_robotbase_flange = T_base_robotbase.inverse() * T_base_flange;
 
     std::vector<Eigen::VectorXd> robot_sol =
-        robot_ik_solver_->getIk(T_robotbase_flange, { seeds_robot }, desired_solutions, max_stall_iterations);
+        robot_ik_solver_->getIk(T_robotbase_flange, { _robot_seeds }, desired_solutions, max_stall_iterations);
 
     for (const Eigen::VectorXd& q_robot : robot_sol)
     {
@@ -378,11 +501,6 @@ std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIkSharedSeed(const Eigen::
       break;
     }
   }
-
-  // if (solutions.size() == 0)
-  // {
-  //   ROS_INFO("seed size =%zu, solution size=%zu, iteration=%d", seeds.size(), solutions.size(), idx);
-  // }
 
   return solutions;
 }
@@ -433,21 +551,6 @@ std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIkProjectedSeed(const Eige
   }
 
   return solutions;
-}
-
-std::vector<Eigen::VectorXd> RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange,
-                                                         const std::vector<Eigen::VectorXd>& seeds,
-                                                         const int& desired_solutions, const int& max_stall_iterations)
-{
-  if (seed_generation_algorithm_=="recursive")
-  {
-    return getIkSharedSeed(T_base_flange, seeds, desired_solutions, max_stall_iterations);
-  }
-  else // if (seed_generation_algorithm_=="random_local")
-  {
-    
-    return getIkProjectedSeed(T_base_flange, seeds, desired_solutions, max_stall_iterations);
-  }
 }
 
 Eigen::Affine3d RobotOnGuideIkSolver::getFK(const Eigen::VectorXd& s)
