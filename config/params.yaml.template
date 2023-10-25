@@ -3,7 +3,7 @@ robot_base_frame: ur5_base_link # robot base frame
 flange_frame: ur5_tool0 # end frame of the chain
 tool_frame: tip # destination frame of the IK (it should be rigid attached to flange_frame)
 type: ik_solver/RobotOnGuideIkSolver
-desired_solutions: 1000 # number of desired solution
+desired_solutions: 32 # number of desired solution
 joint_names:
 - linear_motor_cursor_joint
 - ur5_shoulder_pan_joint
