@@ -30,18 +30,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define ROBOT_ON_GUIDE_IK_SOLVER__ROBOT_ON_GUIDE_IK_SOLVER_H
 
 #include <Eigen/Geometry>
-#include <vector>
-#include "Eigen/src/Geometry/Transform.h"
-#include <eigen_conversions/eigen_msg.h>
-#include <ik_solver/ik_solver_base_class.h>
-#include <ik_solver_msgs/GetIk.h>
-#include <ik_solver_msgs/GetIkArray.h>
-#include <pluginlib/class_loader.h>
-#include <rosdyn_core/primitives.h>
-#include <tf/transform_listener.h>
-#include <tf_conversions/tf_eigen.h>
+#include <string>
+#include <memory.h>
+#include <boost/shared_ptr.hpp>
 
 #include <ros/node_handle.h>
+#include <pluginlib/class_loader.h>
+#include <rosdyn_core/primitives.h>
+#include <ik_solver/ik_solver_base_class.h>
 
 #define TOLERANCE 1e-3
 namespace ik_solver
@@ -49,67 +45,34 @@ namespace ik_solver
 class RobotOnGuideIkSolver : public IkSolver
 {
 public:
-  virtual IkConfigurations getIk(const Eigen::Affine3d& T_base_flange, const IkConfigurations& seeds,
+  virtual Configurations getIk(const Eigen::Affine3d& T_base_flange, const Configurations& seeds,
                                  const int& desired_solutions, const int& max_stall_iterations) override;
 
-  virtual IkConfigurations getIkSafeMT(bool& stop, const Eigen::Affine3d& T_base_flange, const IkConfigurations& seeds,
-                                       const int& desired_solutions, const int& max_stall_iterations) override;
-
-  virtual Eigen::Affine3d getFK(const Eigen::VectorXd& s) override;
+  virtual Eigen::Affine3d getFK(const Configuration& s) override;
 
 protected:
   virtual bool customConfig() override;
 
-  ros::NodeHandle robot_nh_;
+  ros::NodeHandle robot_on_guide_nh_; // all the information of the full chain
+  ros::NodeHandle attached_robot_nh_; // only the attached robot infos
 
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
 
-  struct MT
+  boost::shared_ptr<ik_solver::IkSolver> attached_robot_;
+  struct Chain
   {
-    MT() : guide_chain_(nullptr), robot_ik_solver_(nullptr), solutions_(0), running_(false)
-    {
-
-    }
-    rosdyn::ChainPtr guide_chain_;
-    boost::shared_ptr<ik_solver::IkSolver> robot_ik_solver_;
-    Eigen::VectorXd guide_lb_;
-    Eigen::VectorXd guide_ub_;
-    Eigen::Affine3d guide_lb_pose_;
-    Eigen::Affine3d guide_ub_pose_;
-    IkConfigurations solutions_;
-    bool running_;
-  };
-  std::vector<MT> mt_;
-
-  const rosdyn::ChainPtr& guide_chain(const size_t& i = 0) const;
-  rosdyn::ChainPtr& guide_chain(const size_t& i = 0);
-
-  const boost::shared_ptr<ik_solver::IkSolver>& robot_ik_solver(const size_t& i = 0) const;
-  boost::shared_ptr<ik_solver::IkSolver>& robot_ik_solver(const size_t& i = 0);
-
-  const Eigen::VectorXd& guide_lb(const size_t& i = 0) const;
-  Eigen::VectorXd& guide_lb(const size_t& i = 0);
-
-  const Eigen::VectorXd& guide_ub(const size_t& i = 0) const;
-  Eigen::VectorXd& guide_ub(const size_t& i = 0);
-
-  const Eigen::Affine3d& guide_lb_pose(const size_t& i = 0) const;
-  Eigen::Affine3d& guide_lb_pose(const size_t& i = 0);
-
-  const Eigen::Affine3d& guide_ub_pose(const size_t& i = 0) const;
-  Eigen::Affine3d& guide_ub_pose(const size_t& i = 0);
-
-
-  IkConfigurations getIkSafeMT(bool& stop, const size_t& thread_id, const Eigen::Affine3d& T_base_flange,
-                               const IkConfigurations& seeds, const int& desired_solutions,
-                               const int& max_stall_iterations);
-
-  IkConfigurations getIkSharedSeed(bool& stop, const size_t& thread_id, const Eigen::Affine3d& T_base_flange,
-                                   const IkConfigurations& seeds, const int& desired_solutions,
+    rosdyn::ChainPtr chain_;
+    Configuration range_;
+    Eigen::Affine3d lb_pose_;
+    Eigen::Affine3d ub_pose_;
+  } guide_;
+  
+  Configurations getIkSharedSeed(const Eigen::Affine3d& T_base_flange,
+                                   const Configurations& seeds, const int& desired_solutions,
                                    const int& max_stall_iterations);
 
-  IkConfigurations getIkProjectedSeed(bool& stop, const size_t& thread_id, const Eigen::Affine3d& T_base_flange,
-                                      const IkConfigurations& seeds, const int& desired_solutions,
+  Configurations getIkProjectedSeed(const Eigen::Affine3d& T_base_flange,
+                                      const Configurations& seeds, const int& desired_solutions,
                                       const int& max_stall_iterations);
 
   std::string seed_generation_algorithm_;

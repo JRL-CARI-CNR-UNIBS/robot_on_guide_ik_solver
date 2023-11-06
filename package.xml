@@ -18,9 +18,7 @@
   <exec_depend>ik_solver</exec_depend>
   <exec_depend>roscpp</exec_depend>
   <exec_depend>rosdyn_core</exec_depend>
-  <build_depend>thread_pool_ros_package</build_depend>
-
-
+  
   <export>
     <ik_solver plugin="${prefix}/plugin.xml"/>
   </export>

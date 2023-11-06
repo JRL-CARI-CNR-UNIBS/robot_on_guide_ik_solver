@@ -16,7 +16,6 @@ find_package(catkin REQUIRED COMPONENTS
   ik_solver
   roscpp
   rosdyn_core
-  thread_pool_ros_package
 )
 
 catkin_package(
