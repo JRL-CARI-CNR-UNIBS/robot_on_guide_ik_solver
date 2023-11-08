@@ -30,6 +30,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <cstring>
 #include <vector>
 #include <Eigen/Geometry>
+#include "Eigen/src/Core/Matrix.h"
 
 #include <pluginlib/class_list_macros.h>
 #include <robot_on_guide_ik_solver/robot_on_guide_ik_solver.h>
@@ -96,15 +97,19 @@ bool order_joint_names(std::vector<std::string>& joint_names, std::vector<std::s
 
 double percentage_distance_from(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub)
 {
-  Eigen::Vector3d d = p.translation() - lb.translation();
-  Eigen::Vector3d v = ub.translation() - lb.translation();
-  return d.dot(v.normalized()) / v.norm();
+  Eigen::Vector3d v  = ub.translation() - lb.translation();
+  Eigen::Vector3d d  = p.translation() - lb.translation();
+  double          dv = d.dot(v.normalized()) / v.norm();
+  return dv > 1.0 ? 1.0 : dv < 0.0 ? 0.0 : dv;
+
 }
 
 double percentage_distance_from(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Vector3d& v)
 {
   Eigen::Vector3d d = p.translation() - lb.translation();
-  return d.dot(v.normalized()) / v.norm();
+  double          dv = d.dot(v.normalized()) / v.norm();
+  return dv > 1.0 ? 1.0 : dv < 0.0 ? 0.0 : dv;
+
 }
 
 Eigen::Vector3d distance_from(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Vector3d& v)
@@ -113,20 +118,23 @@ Eigen::Vector3d distance_from(const Eigen::Affine3d& p, const Eigen::Affine3d& l
   return d.dot(v.normalized()) * v.normalized();
 }
 
-Eigen::VectorXd local_random(const Eigen::VectorXd& v, const Eigen::VectorXd& lb, const Eigen::VectorXd& ub,
+Eigen::VectorXd force_inbound(const Eigen::VectorXd& p, const Eigen::VectorXd& lb, const Eigen::VectorXd& ub)
+{
+  Eigen::VectorXd uv = (ub - lb).normalized();
+  return  (p.dot(uv) > ub.dot(uv)) ? ub : 
+          (p.dot(uv) < lb.dot(uv)) ? lb : 
+          p;
+}
+
+
+
+Eigen::VectorXd local_random(const Eigen::VectorXd& p, const Eigen::VectorXd& lb, const Eigen::VectorXd& ub,
                              double range_percentage)
 {
-  Eigen::VectorXd ret = v;
-  Eigen::VectorXd rand = Eigen::VectorXd(v.size()).setRandom();
-  Eigen::VectorXd ub_dist_v = range_percentage * (ub - v);
-  Eigen::VectorXd lb_dist_v = range_percentage * (v - lb);
+  Eigen::MatrixXd eye = Eigen::VectorXd(p.size()).setOnes().asDiagonal();
+  Eigen::MatrixXd rand = Eigen::VectorXd(p.size()).setRandom().asDiagonal();
 
-  for (size_t i = 0; i < v.size(); i++)
-  {
-    ret(i) += rand(i) >= 0 ? rand(i) * ub_dist_v(i) : rand(i) * lb_dist_v(i);
-  }
-
-  return ret;
+  return force_inbound(lb + range_percentage * 0.5 * (eye+rand) * (ub - lb), lb, ub);
 }
 
 double linear_interpolation(const double& lb, const double& ub, const size_t& i_step, const size_t& n_steps)
@@ -137,6 +145,7 @@ double linear_interpolation(const double& lb, const double& ub, const size_t& i_
 
 double sin_interpolation(const double& lb, const double& ub, const size_t& i_step, const size_t& n_steps)
 {
+  assert(ub - lb);
   auto dd = (ub - lb) * (1.0 - std::cos(double(i_step) / double(n_steps) * M_PI / 2.0));
   return lb + dd;
 }
@@ -274,16 +283,9 @@ inline bool RobotOnGuideIkSolver::customConfig()
     return false;
   }
 
-  Configuration guide_lb(guide_names.size());
-  Configuration guide_ub(guide_names.size());
-  for (size_t k = 0; k < guide_names.size(); k++)
-  {
-    guide_lb(k) = guide_.chain_->getQMin()(k);
-    guide_ub(k) = guide_.chain_->getQMax()(k);
-  }
-  guide_.range_   = guide_ub - guide_lb;
-  guide_.lb_pose_ = guide_.chain_->getTransformation(guide_lb);
-  guide_.ub_pose_ = guide_.chain_->getTransformation(guide_ub);
+  guide_.range_   = guide_.chain_->getQMax() - guide_.chain_->getQMin();
+  guide_.lb_pose_ = guide_.chain_->getTransformation(guide_.chain_->getQMin());
+  guide_.ub_pose_ = guide_.chain_->getTransformation(guide_.chain_->getQMax());
   
 
   // =================================
@@ -328,16 +330,25 @@ Configurations RobotOnGuideIkSolver::getIkSharedSeed(const Eigen::Affine3d& T_ba
 
   Configurations _robot_seeds;
   Configurations _guide_seeds;
-  filter_seeds(seeds, guide_.chain_->getActiveJointsNumber(), _guide_seeds, _robot_seeds);
+  if(seeds.size())
+  {
+    filter_seeds(seeds, guide_.chain_->getActiveJointsNumber(), _guide_seeds, _robot_seeds);
+  }
 
   for (size_t idx = 0; idx < (size_t)max_stall_iterations && robot_on_guide_nh_.ok(); idx++)
   {
-    size_t seed_index = idx % _guide_seeds.size();
+    size_t seed_index = 0;
+    Eigen::VectorXd robot_seed(attached_robot_->joint_names().size());
+    Eigen::VectorXd guide_seed(guide_.chain_->getActiveJointsNumber());
 
-    Eigen::VectorXd robot_seed = _robot_seeds.at(seed_index);
-    Eigen::VectorXd guide_seed = _guide_seeds.at(seed_index);
+    if(_guide_seeds.size() && idx < _guide_seeds.size() )
+    {
+      seed_index = idx % _guide_seeds.size();
+      robot_seed = _robot_seeds.at(seed_index);
+      guide_seed = _guide_seeds.at(seed_index);
+    }
 
-    if (idx > _guide_seeds.size())
+    if (_guide_seeds.size() == 0 || idx > _guide_seeds.size())
     {
       double r = double(idx) / double(max_stall_iterations);
       double usage_range = 0.1 * (1.0 - r) + 0.9 * (r);
@@ -384,6 +395,7 @@ Configurations RobotOnGuideIkSolver::getIkProjectedSeed(const Eigen::Affine3d& T
   double range_weight = ramndom_local_params_.max_range_weight_;
   for (size_t idx = 0; idx < max_stall_iterations; idx++)
   {
+    double range = 0.0;
     Eigen::VectorXd _guide_q_seed;
     if (idx == 0)
     {
@@ -391,9 +403,23 @@ Configurations RobotOnGuideIkSolver::getIkProjectedSeed(const Eigen::Affine3d& T
     }
     else
     {
-      double range = sin_interpolation(0, range_weight * guide_.range_.norm(), idx, max_stall_iterations);
+      range  = sin_interpolation(0, range_weight * guide_.range_.norm(), idx, max_stall_iterations);
       _guide_q_seed =
           local_random(_guide_q_seed_0, guide_.chain_->getQMin(), guide_.chain_->getQMax(), range);
+    }
+    if(_guide_q_seed.dot(guide_.range_.normalized())<guide_.chain_->getQMin().dot(guide_.range_.normalized())
+    || _guide_q_seed.dot(guide_.range_.normalized())>guide_.chain_->getQMax().dot(guide_.range_.normalized()))
+    {
+      std::cout << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << idx << std::endl;
+      std::cout << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << guide_.chain_->getQMin()  << std::endl;
+      std::cout << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << guide_.chain_->getQMax()  << std::endl;
+      std::cout << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << "percentage_distance_from: " << percentage_distance_from(T_base_flange, guide_.lb_pose_, guide_.ub_pose_) << std::endl;
+      std::cout << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << "gude range: " << guide_.range_.transpose() << std::endl;
+      std::cout << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << "range: " << range << std::endl;
+      std::cout << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << "_guide_q_seed_0: " << _guide_q_seed_0.transpose() << std::endl;
+      std::cout << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << "_guide_q_seed: " << _guide_q_seed.transpose() << std::endl;
+      
+      assert(0);
     }
 
     Eigen::Affine3d T_base_robotbase = guide_.chain_->getTransformation(_guide_q_seed);
