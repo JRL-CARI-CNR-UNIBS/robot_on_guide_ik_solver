@@ -90,7 +90,7 @@ bool order_joint_names(std::vector<std::string>& joint_names, std::vector<std::s
   }
   jns += "]";
 
-  ROS_INFO("Robot Chain has %zu DOF, Guide Chain has %zu DOF - %s", robot_names.size(), ordered_guide_names.size(),
+  ROS_DEBUG("Robot Chain has %zu DOF, Guide Chain has %zu DOF - %s", robot_names.size(), ordered_guide_names.size(),
            jns.c_str());
   return true;
 }
@@ -247,8 +247,8 @@ inline bool RobotOnGuideIkSolver::customConfig()
   guide_.chain_ = rosdyn::createChain(model_, base_frame_, mounted_robot_base_frame, gravity);
   
   std::vector<std::string> guide_names = guide_.chain_->getActiveJointsName();
-  ROS_INFO_STREAM("Guide base_frame: " << base_frame_);
-  ROS_INFO_STREAM("Guide mounted_robot_base_frame: " << mounted_robot_base_frame);
+  ROS_DEBUG_STREAM("Guide base_frame: " << base_frame_);
+  ROS_DEBUG_STREAM("Guide mounted_robot_base_frame: " << mounted_robot_base_frame);
     
   std::vector<std::string> robot_names{};
   if (order_joint_names(joint_names_, guide_names, robot_names))
