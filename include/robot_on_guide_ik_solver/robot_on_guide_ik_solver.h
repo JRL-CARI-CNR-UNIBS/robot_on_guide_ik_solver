@@ -42,17 +42,25 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define TOLERANCE 1e-3
 namespace ik_solver
 {
+
+
 class RobotOnGuideIkSolver : public IkSolver
 {
 public:
+  RobotOnGuideIkSolver() : ikloader_(nullptr) {};
+  RobotOnGuideIkSolver(const RobotOnGuideIkSolver&) = delete;
+  RobotOnGuideIkSolver(const RobotOnGuideIkSolver&&) = delete;
+  RobotOnGuideIkSolver(RobotOnGuideIkSolver&&) = delete;
+  virtual ~RobotOnGuideIkSolver() = default;
+
+  virtual bool config(const ros::NodeHandle& nh, const std::string& params_ns) override;
   virtual Configurations getIk(const Eigen::Affine3d& T_base_flange, const Configurations& seeds,
-                                 const int& desired_solutions, const int& max_stall_iterations) override;
+                                 const int& desired_solutions = -1, const int& min_stall_iterations = -1, const int& max_stall_iterations = -1) override;
 
   virtual Eigen::Affine3d getFK(const Configuration& s) override;
 
 protected:
-  virtual bool customConfig() override;
-
+  
   ros::NodeHandle robot_on_guide_nh_; // all the information of the full chain
   ros::NodeHandle attached_robot_nh_; // only the attached robot infos
 
@@ -66,21 +74,13 @@ protected:
     Eigen::Affine3d lb_pose_;
     Eigen::Affine3d ub_pose_;
   } guide_;
+
+  std::string plugin_name_;
+  double max_range_weight_ = 0.1;  //
   
-  Configurations getIkSharedSeed(const Eigen::Affine3d& T_base_flange,
-                                   const Configurations& seeds, const int& desired_solutions,
-                                   const int& max_stall_iterations);
-
-  Configurations getIkProjectedSeed(const Eigen::Affine3d& T_base_flange,
-                                      const Configurations& seeds, const int& desired_solutions,
-                                      const int& max_stall_iterations);
-
-  std::string seed_generation_algorithm_;
-  struct ramndom_local_params
-  {
-    double max_range_weight_ = 0.1;  //
-  } ramndom_local_params_;
 };
+
+
 }  //  namespace ik_solver
 
 #endif  // ROBOT_ON_GUIDE_IK_SOLVER__ROBOT_ON_GUIDE_IK_SOLVER_H
