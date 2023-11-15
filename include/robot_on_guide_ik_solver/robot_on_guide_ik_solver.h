@@ -33,6 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string>
 #include <memory.h>
 #include <boost/shared_ptr.hpp>
+#include "rosdyn_core/internal/types.h"
 
 #include <ros/node_handle.h>
 #include <pluginlib/class_loader.h>
@@ -43,6 +44,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 namespace ik_solver
 {
 
+double axes_distance(const Eigen::Vector3d& V, const Eigen::Vector3d& uv, const Eigen::Vector3d& R, const Eigen::Vector3d& ur);
+bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& uv, const double& r, const Eigen::Vector3d& cylinder_ax, bool closest_to_lb=true);
+bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub, const double& r, const Eigen::Vector3d& cylinder_ax, bool closest_to_lb=true);
+double compute_polar_reaching(const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& ray, const Eigen::Vector3d& cylinder_ax);
+double compute_polar_reaching(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub, const Eigen::Vector3d& cylinder_ax);
+Eigen::Vector3d project(const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& u);
+Eigen::Vector3d project(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub);
 
 class RobotOnGuideIkSolver : public IkSolver
 {
@@ -59,6 +67,10 @@ public:
 
   virtual Eigen::Affine3d getFK(const Configuration& s) override;
 
+  rosdyn::ChainPtr guide() { return guide_.chain_;}
+  Eigen::Affine3d le() { return guide_.le_;}
+  Eigen::Affine3d ue() { return guide_.ue_;}
+
 protected:
   
   ros::NodeHandle robot_on_guide_nh_; // all the information of the full chain
@@ -67,16 +79,21 @@ protected:
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
 
   boost::shared_ptr<ik_solver::IkSolver> attached_robot_;
+
+  double target_reaching_ = 2.0;
   struct Chain
   {
     rosdyn::ChainPtr chain_;
-    Configuration range_;
-    Eigen::Affine3d lb_pose_;
-    Eigen::Affine3d ub_pose_;
+    Configuration    jstroke_;
+    Configuration    jax_;
+    Eigen::Affine3d  le_;
+    Eigen::Affine3d  ue_;
+    Eigen::Vector3d  pstroke_;
+    Eigen::Vector3d  pax_;
   } guide_;
 
   std::string plugin_name_;
-  double max_range_weight_ = 0.1;  //
+  double max_seek_range_m_ = 0.1;  //
   
 };
 
