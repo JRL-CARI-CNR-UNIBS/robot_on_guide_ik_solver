@@ -126,7 +126,7 @@ int main(int argc, char** argv)
       << std::endl;
     std::cout << "reaching: " << ik_solver::compute_polar_reaching(T06, ik_solver.le(), ik_solver.ue(), Eigen::Vector3d::UnitZ()) << std::endl;
     auto sol = ik_solver.getIk(T06, {}, 32, 100, 200);
-    for (const auto& q : sol)
+    for (const auto& q : sol.configurations())
     {
       auto robot_base = ik_solver.guide()->getTransformation(q.head(ik_solver.guide()->getJointsNumber()));
       auto dist = ik_solver::axes_distance(T06.translation(), Eigen::Vector3d::UnitZ(), robot_base.translation(), Eigen::Vector3d::UnitZ());

@@ -27,10 +27,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <vector>
 #include <Eigen/Geometry>
 #include "Eigen/src/Core/Matrix.h"
+#include "Eigen/src/Geometry/AngleAxis.h"
+#include "ik_solver/internal/types.h"
 #include <ik_solver/ik_solver_base_class.h>
 
 #include <pluginlib/class_list_macros.h>
@@ -296,14 +299,6 @@ bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Vector3d& P, con
   Eigen::Vector3d ux = uv.cross(uz).normalized();
   Eigen::Vector3d uy = (uz.cross(ux)).normalized();
 
-  std::cout << "=========================" << std::endl;
-  std::cout << "P : " << P.transpose() << std::endl;
-  std::cout << "A : " << A.transpose() << std::endl;
-  std::cout << "uv: " << uv.transpose() << std::endl;
-  std::cout << "ux: " << ux.transpose() << std::endl;
-  std::cout << "uy: " << uy.transpose() << std::endl;
-  std::cout << "uz: " << uz.transpose() << std::endl;
-
   Eigen::Vector3d AP = (P - A);
   double ap_x = AP.dot(ux);
   if (std::fabs(ap_x) > r)
@@ -314,22 +309,14 @@ bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Vector3d& P, con
   double ap_y = AP.dot(uy);
   double ap_z = AP.dot(uz);
 
-  std::cout << "ap_x " << ap_x << ", ap_y " << ap_y << ", ap_z " << ap_z << std::endl;
-
   double delta = r * r - ap_x * ap_x;
 
   Eigen::Vector3d AP_zy = (ap_y * uy + ap_z * uz);
-  std::cout << "AP_zy: " << AP_zy.transpose() << std::endl;
   Eigen::Vector3d AK_zy = AP_zy + (closest_to_lb ? -1 : 1) * std::sqrt(delta) * uy;
-  std::cout << "AK_zy: " << AK_zy.transpose() << std::endl;
-  std::cout << "KP_zy: " << (AP - AK_zy).transpose() << ", norm: " << (AP - AK_zy).transpose().norm() << std::endl;
 
   Eigen::Vector3d AK = AK_zy.dot(uv) * uv;
-  std::cout << "AK: " << AK.transpose() << std::endl;
 
   K = A + AK;
-  std::cout << "K: " << K.transpose() << std::endl;
-  std::cout << "=========================" << std::endl;
   return true;
 }
 
@@ -513,12 +500,13 @@ inline bool RobotOnGuideIkSolver::config(const ros::NodeHandle& nh, const std::s
   return true;
 }
 
-Configurations RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, const Configurations& seeds,
+Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, const Configurations& seeds,
                                            const int& desired_solutions, const int& min_stall_iterations,
                                            const int& max_stall_iterations)
 {
-  Configurations solutions;
+  Solutions solutions;
   solutions.clear();
+
 
   Configurations _robot_seeds;
   Configurations _guide_seeds;
@@ -539,10 +527,10 @@ Configurations RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange,
   starget0 = starget0 < 0 ? 0 : starget0 > 1.0 ? 1.0 : starget0;
   Configuration jtarget = guide_.chain_->getQMin() + starget0 * guide_.jstroke_;
 
-  int _desired_solutions = desired_solutions == -1 ? desired_solutions_ : desired_solutions;
-  int _min_stall_iterations = min_stall_iterations == -1 ? min_stall_iter_ : min_stall_iterations;
-  int _max_stall_iterations = max_stall_iterations == -1 ? max_stall_iter_ : max_stall_iterations;
-
+  int _desired_solutions = desired_solutions       == -1 ? desired_solutions_ : desired_solutions;
+  int _min_stall_iterations = min_stall_iterations == -1 ? min_stall_iter_    : min_stall_iterations;
+  int _max_stall_iterations = max_stall_iterations == -1 ? max_stall_iter_    : max_stall_iterations;
+   
   for (size_t idx = 0; idx < (size_t)_max_stall_iterations && robot_on_guide_nh_.ok(); idx++)
   {
     Eigen::VectorXd robot_seed(attached_robot_->joint_names().size());
@@ -574,25 +562,31 @@ Configurations RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange,
     Eigen::Affine3d T_base_robotbase = guide_.chain_->getTransformation(guide_seed);
     Eigen::Affine3d T_robotbase_flange = T_base_robotbase.inverse() * T_base_flange;
 
-    Configurations robot_sol = attached_robot_->getIk(T_robotbase_flange, { robot_seed }, _desired_solutions,
-                                                      _min_stall_iterations, _max_stall_iterations);
+    Solutions robot_sol = attached_robot_->getIk(T_robotbase_flange, { robot_seed }, _desired_solutions, _min_stall_iterations, _max_stall_iterations);
 
-    for (const Eigen::VectorXd& q_robot : robot_sol)
+    for (const Configuration& q_robot : robot_sol.configurations())
     {
-      Eigen::VectorXd q_tot(guide_seed.size() + q_robot.size());
+      Configuration q_tot(guide_seed.size() + q_robot.size());
       q_tot << guide_seed, q_robot;
-      if(!ik_solver::isPresent(q_tot, solutions, 2e-3))
+      if(!ik_solver::isPresent(q_tot, solutions.configurations(), 2e-3))
       {
-        solutions.push_back(q_tot);
+        auto T0f = this->getFK(q_tot);
+        Eigen::AngleAxisd aa; aa = (T_base_flange.linear().inverse() * T0f.linear()).matrix();
+
+        solutions.translation_residuals().push_back((T_base_flange.translation() - T0f.translation()).norm());
+        solutions.rotation_residuals().push_back(aa.angle());
+
+        auto T0b = this->guide()->getTransformation(guide_seed);
+        solutions.configurations().push_back(q_tot);
       }
     }
 
-    if ((int)solutions.size() > _desired_solutions)
+    if ((int)solutions.configurations().size() > _desired_solutions)
     {
       break;
     }
 
-    if (((int)solutions.size() > 0) && idx > _min_stall_iterations)
+    if (((int)solutions.configurations().size() > 0) && idx > _min_stall_iterations)
     {
       break;
     }
