@@ -521,7 +521,7 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
   bool ok = ik_solver::cylinder_ray_intersection(ptarget,  T_base_flange, guide_.le_, guide_.ue_, target_reaching_, Ax0, true);
   if(!ok)
   {
-    assert(0);
+    ptarget = ik_solver::project(T_base_flange, guide_.le_, guide_.ue_);
   }
   double starget0 = (ptarget - guide_.le_.translation()).dot(guide_.pax_) / guide_.pstroke_.norm(); // curvilinear abscissa in Cartesian Space
   starget0 = starget0 < 0 ? 0 : starget0 > 1.0 ? 1.0 : starget0;
