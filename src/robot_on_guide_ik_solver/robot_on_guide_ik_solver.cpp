@@ -583,15 +583,18 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
 
     if ((int)solutions.configurations().size() > _desired_solutions)
     {
+      solutions.iterations() = idx;
       break;
     }
 
     if (((int)solutions.configurations().size() > 0) && idx > _min_stall_iterations)
     {
+      solutions.iterations() = idx;
       break;
     }
   }
-
+  
+  solutions.number_of_seeds() = seeds.size();
   return solutions;
 }
 
