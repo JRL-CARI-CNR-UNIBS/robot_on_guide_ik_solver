@@ -488,14 +488,13 @@ inline bool RobotOnGuideIkSolver::config(const ros::NodeHandle& nh, const std::s
   
 
   // ======================================================
-  // FNISH GUIDE SETUP
+  // FNISH SETUP
   // ======================================================
   max_seek_range_m_ = 0.01;
   ros::param::get(robot_on_guide_ns + "max_exploration_range", max_seek_range_m_);
 
-  // INIT GUIDE CHAIN
   target_reaching_ = 2.0;
-  ros::param::get(attached_robot_ns + "target_reaching", target_reaching_);
+  ros::param::get(robot_on_guide_ns + "target_reaching", target_reaching_);
 
   return true;
 }
@@ -530,8 +529,10 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
   int _desired_solutions = desired_solutions       == -1 ? desired_solutions_ : desired_solutions;
   int _min_stall_iterations = min_stall_iterations == -1 ? min_stall_iter_    : min_stall_iterations;
   int _max_stall_iterations = max_stall_iterations == -1 ? max_stall_iter_    : max_stall_iterations;
-   
-  for (size_t idx = 0; idx < (size_t)_max_stall_iterations && robot_on_guide_nh_.ok(); idx++)
+  
+  std::vector<double> ray;
+  size_t idx = 0;
+  for (idx = 0; idx < (size_t)_max_stall_iterations && robot_on_guide_nh_.ok(); idx++)
   {
     Eigen::VectorXd robot_seed(attached_robot_->joint_names().size());
     Eigen::VectorXd guide_seed(guide_.chain_->getActiveJointsNumber());
@@ -563,7 +564,6 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
     Eigen::Affine3d T_robotbase_flange = T_base_robotbase.inverse() * T_base_flange;
 
     Solutions robot_sol = attached_robot_->getIk(T_robotbase_flange, { robot_seed }, _desired_solutions, _min_stall_iterations, _max_stall_iterations);
-
     for (const Configuration& q_robot : robot_sol.configurations())
     {
       Configuration q_tot(guide_seed.size() + q_robot.size());
@@ -578,23 +578,32 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
 
         auto T0b = this->guide()->getTransformation(guide_seed);
         solutions.configurations().push_back(q_tot);
+
+        auto robot_base = guide()->getTransformation(guide_seed);
+        auto dist = ik_solver::axes_distance(T_base_flange.translation(), Eigen::Vector3d::UnitZ(), robot_base.translation(), Eigen::Vector3d::UnitZ());
+        ray.push_back(dist);
       }
     }
 
-    if ((int)solutions.configurations().size() > _desired_solutions)
+    if ((int)solutions.configurations().size() >= _desired_solutions)
     {
-      solutions.iterations() = idx;
       break;
     }
 
     if (((int)solutions.configurations().size() > 0) && idx > _min_stall_iterations)
     {
-      solutions.iterations() = idx;
       break;
     }
   }
   
-  solutions.number_of_seeds() = seeds.size();
+  double max_tre = solutions.translation_residuals().size() ? *std::max_element(solutions.translation_residuals().begin(), solutions.translation_residuals().end()) : 0.0;
+  double max_rre = solutions.rotation_residuals().size() ? *std::max_element(solutions.rotation_residuals().begin(), solutions.rotation_residuals().end()) : 0.0;
+  double max_ray = ray.size() ? *std::max_element(ray.begin(),ray.end()) : 0.0;
+  double min_ray = ray.size() ? *std::min_element(ray.begin(),ray.end()) : 0.0;
+
+  solutions.message() = "It. " + std::to_string(idx+1) + "("+std::to_string(_min_stall_iterations)+"-"+std::to_string(_max_stall_iterations)+")" + 
+                      "Seeds n. " + std::to_string(seeds.size()) + ", Ray " +  std::to_string(min_ray)+"-"+std::to_string(max_ray) + "("+std::to_string(target_reaching_)+")";
+
   return solutions;
 }
 
