@@ -568,7 +568,14 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
     {
       Configuration q_tot(guide_seed.size() + q_robot.size());
       q_tot << guide_seed, q_robot;
-      if(!ik_solver::isPresent(q_tot, solutions.configurations(), 2e-3))
+
+      if(ik_solver::isPresent(q_tot, solutions.configurations(), 2e-3))
+      {
+        continue;
+      }
+
+      bool ok = (checker_) ? checker_(q_tot) : true;
+      if(ok)
       {
         auto T0f = this->getFK(q_tot);
         Eigen::AngleAxisd aa; aa = (T_base_flange.linear().inverse() * T0f.linear()).matrix();
