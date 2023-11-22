@@ -41,6 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ik_solver/internal/utils.h>
 
 #include <robot_on_guide_ik_solver/robot_on_guide_ik_solver.h>
+#include <robot_on_guide_ik_solver/internal/math.h>
 
 int main(int argc, char** argv)
 {

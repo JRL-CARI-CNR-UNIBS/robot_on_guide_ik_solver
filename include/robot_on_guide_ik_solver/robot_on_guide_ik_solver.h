@@ -44,14 +44,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 namespace ik_solver
 {
 
-double axes_distance(const Eigen::Vector3d& V, const Eigen::Vector3d& uv, const Eigen::Vector3d& R, const Eigen::Vector3d& ur);
-bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& uv, const double& r, const Eigen::Vector3d& cylinder_ax, bool closest_to_lb=true);
-bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub, const double& r, const Eigen::Vector3d& cylinder_ax, bool closest_to_lb=true);
-double compute_polar_reaching(const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& ray, const Eigen::Vector3d& cylinder_ax);
-double compute_polar_reaching(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub, const Eigen::Vector3d& cylinder_ax);
-Eigen::Vector3d project(const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& u);
-Eigen::Vector3d project(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub);
-
 class RobotOnGuideIkSolver : public IkSolver
 {
 public:
