@@ -147,13 +147,14 @@ double half_sin_interpolation(const double& lb, const double& ub, const size_t& 
   return lb + dd;
 }
 
-double symmetric_centered_sampler(const double& s0, const double& symmetric_delta, const size_t& i_step, const size_t& n_steps)
+double symmetric_centered_sampler(const double& s0, const double& symmetric_delta, const size_t& i_step,
+                                  const size_t& n_steps)
 {
-  int _i_step = (i_step % 2 == 0) ? -i_step / 2 :  ( i_step + 1 / 2); 
+  int _i_step = (i_step % 2 == 0) ? -i_step / 2 : (i_step + 1 / 2);
   int _n_steps = n_steps / 2;
   double delta = std::fabs(symmetric_delta);
   double step = delta / _n_steps;
-  
+
   return s0 + _i_step * step;
 }
 
@@ -197,14 +198,13 @@ Eigen::VectorXd random(const Eigen::VectorXd& v, const Eigen::VectorXd& lb, cons
   return ret;
 }
 
-bool project_target_reaching(Eigen::Vector3d& target_intersection, const double& target_reaching, const Eigen::Affine3d& p, const Eigen::Affine3d& lb,
-                               const Eigen::Affine3d& ub, const Eigen::Vector3d& AX0)
+bool project_target_reaching(Eigen::Vector3d& target_intersection, const double& target_reaching,
+                             const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub,
+                             const Eigen::Vector3d& AX0)
 {
-
   bool ok = ik_solver::cylinder_ray_intersection(target_intersection, p, lb, ub, target_reaching, AX0, true);
-  if(!ok)
+  if (!ok)
   {
-
   }
 
   double s = 0.0;
@@ -337,8 +337,8 @@ bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Affine3d& p, con
                                const Eigen::Affine3d& ub, const double& r, const Eigen::Vector3d& cylinder_ax,
                                bool closest_to_lb)
 {
-  return cylinder_ray_intersection(K, p.translation(), lb.translation(), (ub.translation()-lb.translation()).normalized(), r, cylinder_ax,
-                                   closest_to_lb);
+  return cylinder_ray_intersection(K, p.translation(), lb.translation(),
+                                   (ub.translation() - lb.translation()).normalized(), r, cylinder_ax, closest_to_lb);
 }
 
 /**
@@ -485,7 +485,6 @@ inline bool RobotOnGuideIkSolver::config(const ros::NodeHandle& nh, const std::s
   guide_.ue_ = guide_.chain_->getTransformation(guide_.chain_->getQMax());
   guide_.pstroke_ = guide_.ue_.translation() - guide_.le_.translation();
   guide_.pax_ = guide_.pstroke_.normalized();
-  
 
   // ======================================================
   // FNISH SETUP
@@ -500,12 +499,11 @@ inline bool RobotOnGuideIkSolver::config(const ros::NodeHandle& nh, const std::s
 }
 
 Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, const Configurations& seeds,
-                                           const int& desired_solutions, const int& min_stall_iterations,
-                                           const int& max_stall_iterations)
+                                      const int& desired_solutions, const int& min_stall_iterations,
+                                      const int& max_stall_iterations)
 {
   Solutions solutions;
   solutions.clear();
-
 
   Configurations _robot_seeds;
   Configurations _guide_seeds;
@@ -517,19 +515,21 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
   Eigen::Vector3d Ax0 = Eigen::Vector3d::UnitZ();
 
   Eigen::Vector3d ptarget;
-  bool ok = ik_solver::cylinder_ray_intersection(ptarget,  T_base_flange, guide_.le_, guide_.ue_, target_reaching_, Ax0, true);
-  if(!ok)
+  bool ok =
+      ik_solver::cylinder_ray_intersection(ptarget, T_base_flange, guide_.le_, guide_.ue_, target_reaching_, Ax0, true);
+  if (!ok)
   {
     ptarget = ik_solver::project(T_base_flange, guide_.le_, guide_.ue_);
   }
-  double starget0 = (ptarget - guide_.le_.translation()).dot(guide_.pax_) / guide_.pstroke_.norm(); // curvilinear abscissa in Cartesian Space
+  double starget0 = (ptarget - guide_.le_.translation()).dot(guide_.pax_) /
+                    guide_.pstroke_.norm();  // curvilinear abscissa in Cartesian Space
   starget0 = starget0 < 0 ? 0 : starget0 > 1.0 ? 1.0 : starget0;
   Configuration jtarget = guide_.chain_->getQMin() + starget0 * guide_.jstroke_;
 
-  int _desired_solutions = desired_solutions       == -1 ? desired_solutions_ : desired_solutions;
-  int _min_stall_iterations = min_stall_iterations == -1 ? min_stall_iter_    : min_stall_iterations;
-  int _max_stall_iterations = max_stall_iterations == -1 ? max_stall_iter_    : max_stall_iterations;
-  
+  int _desired_solutions = desired_solutions == -1 ? desired_solutions_ : desired_solutions;
+  int _min_stall_iterations = min_stall_iterations == -1 ? min_stall_iter_ : min_stall_iterations;
+  int _max_stall_iterations = max_stall_iterations == -1 ? max_stall_iter_ : max_stall_iterations;
+
   std::vector<double> ray;
   size_t idx = 0;
   for (idx = 0; idx < (size_t)_max_stall_iterations && robot_on_guide_nh_.ok(); idx++)
@@ -553,8 +553,9 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
       }
       else
       {
-        double starget = symmetric_centered_sampler(starget0, 0.5 * max_seek_range_m_/guide_.pstroke_.norm(), idx, max_stall_iterations);
-        
+        double starget = symmetric_centered_sampler(starget0, 0.5 * max_seek_range_m_ / guide_.pstroke_.norm(), idx,
+                                                    max_stall_iterations);
+
         guide_seed = guide_.chain_->getQMin() + starget * guide_.jstroke_;
         guide_seed = force_inbound(guide_seed, guide_.chain_->getQMin(), guide_.chain_->getQMax());
       }
@@ -563,15 +564,17 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
     Eigen::Affine3d T_base_robotbase = guide_.chain_->getTransformation(guide_seed);
     Eigen::Affine3d T_robotbase_flange = T_base_robotbase.inverse() * T_base_flange;
 
-    Solutions robot_sol = attached_robot_->getIk(T_robotbase_flange, { robot_seed }, _desired_solutions, _min_stall_iterations, _max_stall_iterations);
+    Solutions robot_sol = attached_robot_->getIk(T_robotbase_flange, { robot_seed }, _desired_solutions,
+                                                 _min_stall_iterations, _max_stall_iterations);
     for (const Configuration& q_robot : robot_sol.configurations())
     {
       Configuration q_tot(guide_seed.size() + q_robot.size());
       q_tot << guide_seed, q_robot;
-      if(!ik_solver::isPresent(q_tot, solutions.configurations(), 2e-3))
+      if (!ik_solver::isPresent(q_tot, solutions.configurations(), 2e-3))
       {
         auto T0f = this->getFK(q_tot);
-        Eigen::AngleAxisd aa; aa = (T_base_flange.linear().inverse() * T0f.linear()).matrix();
+        Eigen::AngleAxisd aa;
+        aa = (T_base_flange.linear().inverse() * T0f.linear()).matrix();
 
         solutions.translation_residuals().push_back((T_base_flange.translation() - T0f.translation()).norm());
         solutions.rotation_residuals().push_back(aa.angle());
@@ -580,7 +583,8 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
         solutions.configurations().push_back(q_tot);
 
         auto robot_base = guide()->getTransformation(guide_seed);
-        auto dist = ik_solver::axes_distance(T_base_flange.translation(), Eigen::Vector3d::UnitZ(), robot_base.translation(), Eigen::Vector3d::UnitZ());
+        auto dist = ik_solver::axes_distance(T_base_flange.translation(), Eigen::Vector3d::UnitZ(),
+                                             robot_base.translation(), Eigen::Vector3d::UnitZ());
         ray.push_back(dist);
       }
     }
@@ -595,14 +599,21 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
       break;
     }
   }
-  
-  double max_tre = solutions.translation_residuals().size() ? *std::max_element(solutions.translation_residuals().begin(), solutions.translation_residuals().end()) : 0.0;
-  double max_rre = solutions.rotation_residuals().size() ? *std::max_element(solutions.rotation_residuals().begin(), solutions.rotation_residuals().end()) : 0.0;
-  double max_ray = ray.size() ? *std::max_element(ray.begin(),ray.end()) : 0.0;
-  double min_ray = ray.size() ? *std::min_element(ray.begin(),ray.end()) : 0.0;
 
-  solutions.message() = "It. " + std::to_string(idx+1) + "("+std::to_string(_min_stall_iterations)+"-"+std::to_string(_max_stall_iterations)+")" + 
-                      "Seeds n. " + std::to_string(seeds.size()) + ", Ray " +  std::to_string(min_ray)+"-"+std::to_string(max_ray) + "("+std::to_string(target_reaching_)+")";
+  double max_tre =
+      solutions.translation_residuals().size() ?
+          *std::max_element(solutions.translation_residuals().begin(), solutions.translation_residuals().end()) :
+          0.0;
+  double max_rre = solutions.rotation_residuals().size() ?
+                       *std::max_element(solutions.rotation_residuals().begin(), solutions.rotation_residuals().end()) :
+                       0.0;
+  double max_ray = ray.size() ? *std::max_element(ray.begin(), ray.end()) : 0.0;
+  double min_ray = ray.size() ? *std::min_element(ray.begin(), ray.end()) : 0.0;
+
+  solutions.message() = "It. " + std::to_string(idx + 1) + "(" + std::to_string(_min_stall_iterations) + "-" +
+                        std::to_string(_max_stall_iterations) + ")" + "Seeds n. " + std::to_string(seeds.size()) +
+                        ", Ray " + std::to_string(min_ray) + "-" + std::to_string(max_ray) + "(" +
+                        std::to_string(target_reaching_) + ")";
 
   return solutions;
 }
