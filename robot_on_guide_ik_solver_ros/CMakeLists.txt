@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(robot_on_guide_ik_solver)
+project(robot_on_guide_ik_solver_ros)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -13,7 +13,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
 find_package(catkin REQUIRED COMPONENTS
-  ik_solver
+  ik_solver_core
+  ik_solver_ros
+  robot_on_guide_ik_solver
   roscpp
   rosdyn_core
 )
@@ -21,7 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES robot_on_guide_ik_solver
-  CATKIN_DEPENDS ik_solver roscpp rosdyn_core
+  CATKIN_DEPENDS ik_solver_core roscpp rosdyn_core
   DEPENDS
 )
 
@@ -31,14 +33,12 @@ include_directories(
 )
 
 add_library(${PROJECT_NAME}
- src/${PROJECT_NAME}/robot_on_guide_ik_solver.cpp
+ src/${PROJECT_NAME}/robot_on_guide_ik_solver_ros.cpp
 )
 add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(${PROJECT_NAME}
  ${catkin_LIBRARIES}
 )
-
-
 
 add_executable(${PROJECT_NAME}_test test/main.cpp)
 add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})

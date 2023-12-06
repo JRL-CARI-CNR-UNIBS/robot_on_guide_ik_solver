@@ -1,0 +1,7 @@
+<library path="lib/librobot_on_guide_ik_solver">
+  <class name="ik_solver/RobotOnGuideIkSolver" type="ik_solver::RobotOnGuideIkSolver" base_class_type="ik_solver::IkSolver">
+		<description>
+			Rosdyn IK solver
+		</description>
+	</class>
+</library>

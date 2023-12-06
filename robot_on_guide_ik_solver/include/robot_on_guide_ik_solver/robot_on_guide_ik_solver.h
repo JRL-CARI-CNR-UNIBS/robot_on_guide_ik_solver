@@ -29,28 +29,35 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef ROBOT_ON_GUIDE_IK_SOLVER__ROBOT_ON_GUIDE_IK_SOLVER_H
 #define ROBOT_ON_GUIDE_IK_SOLVER__ROBOT_ON_GUIDE_IK_SOLVER_H
 
-#include <Eigen/Geometry>
+
 #include <string>
 #include <memory.h>
-#include <boost/shared_ptr.hpp>
-#include "rosdyn_core/internal/types.h"
 
-#include <ros/node_handle.h>
-#include <pluginlib/class_loader.h>
+#include <Eigen/Geometry>
 #include <rosdyn_core/primitives.h>
-#include <ik_solver/ik_solver_base_class.h>
 
-#define TOLERANCE 1e-3
+#include <pluginlib/class_loader.h>
+
+#include <ik_solver_core/ik_solver_base_class.h>
+
 namespace ik_solver
 {
 
-double axes_distance(const Eigen::Vector3d& V, const Eigen::Vector3d& uv, const Eigen::Vector3d& R, const Eigen::Vector3d& ur);
-bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& uv, const double& r, const Eigen::Vector3d& cylinder_ax, bool closest_to_lb=true);
-bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub, const double& r, const Eigen::Vector3d& cylinder_ax, bool closest_to_lb=true);
-double compute_polar_reaching(const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& ray, const Eigen::Vector3d& cylinder_ax);
-double compute_polar_reaching(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub, const Eigen::Vector3d& cylinder_ax);
-Eigen::Vector3d project(const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& u);
-Eigen::Vector3d project(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub);
+struct RobotOnGuideIkSolverOptions: IkSolverOptions
+{
+  std::string mounted_robot_base_frame_;
+  std::string robot_description_xmlstring_;
+
+  std::vector<std::string> guide_names_;
+  
+  
+  using Ptr = std::shared_ptr<RobotOnGuideIkSolverOptions>;
+  using ConstPtr = std::shared_ptr<const RobotOnGuideIkSolverOptions>;
+};
+
+using RobotOnGuideIkSolverOptionsPtr = RobotOnGuideIkSolverOptions::Ptr;
+using RobotOnGuideIkSolverOptionsConstPtr = RobotOnGuideIkSolverOptions::ConstPtr;
+
 
 class RobotOnGuideIkSolver : public IkSolver
 {
@@ -61,7 +68,7 @@ public:
   RobotOnGuideIkSolver(RobotOnGuideIkSolver&&) = delete;
   virtual ~RobotOnGuideIkSolver() = default;
 
-  virtual bool config(const ros::NodeHandle& nh, const std::string& params_ns) override;
+  virtual bool config(IkSolverOptionsConstPtr nh, std::string& what) override;
   virtual Solutions getIk(const Eigen::Affine3d& T_base_flange, const Configurations& seeds,
                                  const int& desired_solutions = -1, const int& min_stall_iterations = -1, const int& max_stall_iterations = -1) override;
 
@@ -72,10 +79,9 @@ public:
   Eigen::Affine3d ue() { return guide_.ue_;}
 
 protected:
-  
-  ros::NodeHandle robot_on_guide_nh_; // all the information of the full chain
-  ros::NodeHandle attached_robot_nh_; // only the attached robot infos
 
+  RobotOnGuideIkSolverOptionsConstPtr opts_;
+  
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
 
   boost::shared_ptr<ik_solver::IkSolver> attached_robot_;
