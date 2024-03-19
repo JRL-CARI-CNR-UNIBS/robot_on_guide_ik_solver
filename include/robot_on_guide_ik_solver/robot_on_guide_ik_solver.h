@@ -31,14 +31,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <Eigen/Geometry>
 #include <string>
-#include <memory.h>
-#include <boost/shared_ptr.hpp>
-#include "rosdyn_core/internal/types.h"
+#include <memory>
+//#include <boost/shared_ptr.hpp>
+#include "rdyn_core/internal/types.h"
 
-#include <ros/node_handle.h>
-#include <pluginlib/class_loader.h>
-#include <rosdyn_core/primitives.h>
-#include <ik_solver/ik_solver_base_class.h>
+//#include <ros/node_handle.h>
+#include <rclcpp/rclcpp.hpp>
+#include <pluginlib/class_loader.hpp>
+#include <rdyn_core/primitives.h>
+#include <ik_solver_core/ik_solver_base_class.h>
 
 #define TOLERANCE 1e-3
 namespace ik_solver
@@ -61,20 +62,24 @@ public:
   RobotOnGuideIkSolver(RobotOnGuideIkSolver&&) = delete;
   virtual ~RobotOnGuideIkSolver() = default;
 
-  virtual bool config(const ros::NodeHandle& nh, const std::string& params_ns) override;
+  virtual bool config(const std::string& params_ns) override;
   virtual Solutions getIk(const Eigen::Affine3d& T_base_flange, const Configurations& seeds,
                                  const int& desired_solutions = -1, const int& min_stall_iterations = -1, const int& max_stall_iterations = -1) override;
 
+
   virtual Eigen::Affine3d getFK(const Configuration& s) override;
 
-  rosdyn::ChainPtr guide() { return guide_.chain_;}
+  rdyn::ChainPtr guide() { return guide_.chain_;}
   Eigen::Affine3d le() { return guide_.le_;}
   Eigen::Affine3d ue() { return guide_.ue_;}
 
 protected:
   
-  ros::NodeHandle robot_on_guide_nh_; // all the information of the full chain
-  ros::NodeHandle attached_robot_nh_; // only the attached robot infos
+//  rclcpp::Node::SharedPtr robot_on_guide_nh_; // all the information of the full chain
+//  rclcpp::Node::SharedPtr attached_robot_nh_; // only the attached robot infos
+
+  std::string robot_on_guide_ns_;
+  std::string attached_robot_ns_;
 
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
 
@@ -83,7 +88,7 @@ protected:
   double target_reaching_ = 2.0;
   struct Chain
   {
-    rosdyn::ChainPtr chain_;
+    rdyn::ChainPtr chain_;
     Configuration    jstroke_;
     Configuration    jax_;
     Eigen::Affine3d  le_;

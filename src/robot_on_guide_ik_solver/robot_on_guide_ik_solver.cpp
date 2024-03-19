@@ -34,9 +34,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "Eigen/src/Core/Matrix.h"
 #include "Eigen/src/Geometry/AngleAxis.h"
 #include "ik_solver/internal/types.h"
-#include <ik_solver/ik_solver_base_class.h>
+#include <ik_solver_core/ik_solver_base_class.h>
 
-#include <pluginlib/class_list_macros.h>
+#include <pluginlib/class_list_macros.hpp>
 #include <robot_on_guide_ik_solver/robot_on_guide_ik_solver.h>
 
 PLUGINLIB_EXPORT_CLASS(ik_solver::RobotOnGuideIkSolver, ik_solver::IkSolver)
@@ -62,15 +62,15 @@ bool order_joint_names(std::vector<std::string>& joint_names, std::vector<std::s
   }
   if (ordered_guide_names.size() != guide_names.size())
   {
-    ROS_ERROR("Guide names: ");
+    RCLCPP_ERROR(rclcpp::get_logger("RobotOnGuide-OrderJointNames"), "Guide names: ");
     for (std::string& s : guide_names)
     {
-      ROS_ERROR(" - %s", s.c_str());
+      RCLCPP_ERROR(rclcpp::get_logger("RobotOnGuide-OrderJointNames"), " - %s", s.c_str());
     }
-    ROS_ERROR("joint_names: ");
+    RCLCPP_ERROR(rclcpp::get_logger("RobotOnGuide-OrderJointNames"), "joint_names: ");
     for (std::string& s : joint_names)
     {
-      ROS_ERROR(" - %s", s.c_str());
+      RCLCPP_ERROR(rclcpp::get_logger("RobotOnGuide-OrderJointNames"), " - %s", s.c_str());
     }
     return false;
   }
@@ -93,7 +93,7 @@ bool order_joint_names(std::vector<std::string>& joint_names, std::vector<std::s
   }
   jns += "]";
 
-  ROS_INFO("Robot Chain has %zu DOF, Guide Chain has %zu DOF - %s", robot_names.size(), ordered_guide_names.size(),
+  RCLCPP_INFO(rclcpp::get_logger("RobotOnGuide-OrderJointNames"), "Robot Chain has %zu DOF, Guide Chain has %zu DOF - %s", robot_names.size(), ordered_guide_names.size(),
            jns.c_str());
   return true;
 }
@@ -367,42 +367,44 @@ double compute_polar_reaching(const Eigen::Affine3d& p, const Eigen::Affine3d& l
 }
 
 //==========================================================================================================================
-inline bool RobotOnGuideIkSolver::config(const ros::NodeHandle& nh, const std::string& params_ns)
+inline bool RobotOnGuideIkSolver::config(const std::string& params_ns)
 {
-  if (!IkSolver::config(nh, params_ns))
+  if (!IkSolver::config(params_ns))
   {
     return false;
   }
 
-  ROS_INFO("Start creating %s IK Solver", robot_nh_.getNamespace().c_str());
-
   // ============================================================================
-  robot_on_guide_nh_ = this->robot_nh_;
-  attached_robot_nh_ = ros::NodeHandle(this->robot_nh_.getNamespace() + "/mounted_robot_ik");
+  robot_on_guide_ns_ = params_ns;
+//  attached_robot_nh_ = ros::NodeHandle(this->robot_nh_.getNamespace() + "/mounted_robot_ik");
+  attached_robot_ns_ = params_ns_.append("/mounted_robot_ik");
+
+  CNR_INFO(logger_, "Start creating %s IK Solver", robot_on_guide_ns_.c_str());
 
   std::map<std::string, std::vector<std::string>> mandatory_params{
     { "/", {} },
-    { robot_on_guide_nh_.getNamespace(), { "mounted_robot_ik" } },
-    { attached_robot_nh_.getNamespace(), { "type", "base_frame" } },
+    { robot_on_guide_ns_, { "mounted_robot_ik" } },
+    { attached_robot_ns_, { "type", "base_frame" } },
   };
 
+  std::string what;
   for (const auto& pp : mandatory_params)
   {
     std::string ns = rtrim(trim(pp.first), "/") + "/";
     for (const auto& p : pp.second)
     {
       std::string pn = ns + ltrim(p, "/");
-      if (!ros::param::has(ns + p))
+      if (!cnr::param::has(ns + p, what))
       {
-        ROS_ERROR("%s not found in rosparam server", pn.c_str());
+        CNR_ERROR(logger_, "%s not found in rosparam server", pn.c_str());
         return false;
       }
     }
   }
 
   std::string root_ns = "/";
-  std::string robot_on_guide_ns = rtrim(robot_on_guide_nh_.getNamespace(), "/") + "/";
-  std::string attached_robot_ns = rtrim(attached_robot_nh_.getNamespace(), "/") + "/";
+  std::string robot_on_guide_ns = rtrim(robot_on_guide_ns_, "/") + "/";
+  std::string attached_robot_ns = rtrim(attached_robot_ns_, "/") + "/";
 
   std::map<std::string, std::string> _frames{
     { "flange_frame", flange_frame_ },
@@ -419,27 +421,27 @@ inline bool RobotOnGuideIkSolver::config(const ros::NodeHandle& nh, const std::s
 
   // INIT GUIDE CHAIN
   std::string mounted_robot_base_frame;
-  ros::param::get(attached_robot_ns + "base_frame", mounted_robot_base_frame);
+  cnr::param::get(attached_robot_ns + "base_frame", mounted_robot_base_frame, what);
 
   Eigen::Vector3d gravity;
   gravity << 0, 0, -9.806;
 
-  guide_.chain_ = rosdyn::createChain(model_, base_frame_, mounted_robot_base_frame, gravity);
+  guide_.chain_ = rdyn::createChain(*model_, base_frame_, mounted_robot_base_frame, gravity);
 
   std::vector<std::string> guide_names = guide_.chain_->getActiveJointsName();
-  ROS_INFO_STREAM("Guide base_frame: " << base_frame_);
-  ROS_INFO_STREAM("Guide mounted_robot_base_frame: " << mounted_robot_base_frame);
+  CNR_INFO(logger_, "Guide base_frame: " << base_frame_);
+  CNR_INFO(logger_, "Guide mounted_robot_base_frame: " << mounted_robot_base_frame);
 
   std::vector<std::string> robot_names{};
   if (order_joint_names(joint_names_, guide_names, robot_names))
   {
     // reorder in the param array
-    ros::param::set(robot_on_guide_ns + "/joint_names", joint_names_);
-    ros::param::set(attached_robot_ns + "/joint_names", robot_names);
+    cnr::param::set(robot_on_guide_ns + "/joint_names", joint_names_, what);
+    cnr::param::set(attached_robot_ns + "/joint_names", robot_names , what);
   }
   else
   {
-    ROS_ERROR("Not all the guides names are listed in %s/joint_names", robot_on_guide_ns.c_str());
+    CNR_ERROR(logger_, "Not all the guides names are listed in %s/joint_names", robot_on_guide_ns.c_str());
     return false;
   }
 
@@ -449,16 +451,16 @@ inline bool RobotOnGuideIkSolver::config(const ros::NodeHandle& nh, const std::s
     ikloader_.reset(new pluginlib::ClassLoader<ik_solver::IkSolver>("ik_solver", "ik_solver::IkSolver"));
   }
 
-  ROS_INFO("%s creating ik plugin for mounted robot", attached_robot_ns.c_str());
+  CNR_INFO(logger_, "%s creating ik plugin for mounted robot", attached_robot_ns.c_str());
 
-  guide_.chain_->setInputJointsName(guide_names);
+  guide_.chain_->setInputJointsName(guide_names, what);
 
-  ROS_INFO("%s creating ik plugin for mounted robot", attached_robot_ns.c_str());
+  CNR_INFO(logger_, "%s creating ik plugin for mounted robot", attached_robot_ns.c_str());
   std::string plugin_name;
-  ros::param::get(attached_robot_ns + "type", plugin_name);
+  cnr::param::get(attached_robot_ns + "type", plugin_name, what);
   if (!attached_robot_)  //  in the case I call configure the second time this is not necessary
   {
-    attached_robot_ = ikloader_->createInstance(plugin_name);
+    attached_robot_ = ikloader_->createUniqueInstance(plugin_name);
     plugin_name_ = plugin_name;
   }
   else
@@ -466,16 +468,17 @@ inline bool RobotOnGuideIkSolver::config(const ros::NodeHandle& nh, const std::s
     if (plugin_name != plugin_name_)
     {
       attached_robot_.reset();
-      attached_robot_ = ikloader_->createInstance(plugin_name);
+      attached_robot_ = ikloader_->createUniqueInstance(plugin_name);
       plugin_name_ = plugin_name;
     }
   }
 
-  ros::NodeHandle ik_solver_nh(robot_nh_, "robot_on_guide");
-  if (!attached_robot_->config(ik_solver_nh, attached_robot_ns))  // all takes the data from the same naespace,
+//  ros::NodeHandle ik_solver_nh(robot_nh_, "robot_on_guide");
+  const std::string ik_solver_ns {robot_on_guide_ns_ + "/" + "robot_on_guide"};
+  if (!attached_robot_->config(attached_robot_ns))  // all takes the data from the same naespace,
                                                                   // but they create services in private ns
   {
-    ROS_ERROR("%s: error configuring mounted robot ik", attached_robot_ns.c_str());
+    CNR_ERROR(logger_, "%s: error configuring mounted robot ik", attached_robot_ns.c_str());
     return false;
   }
 
@@ -490,10 +493,10 @@ inline bool RobotOnGuideIkSolver::config(const ros::NodeHandle& nh, const std::s
   // FNISH SETUP
   // ======================================================
   max_seek_range_m_ = 0.01;
-  ros::param::get(robot_on_guide_ns + "max_exploration_range", max_seek_range_m_);
+  cnr::param::get(robot_on_guide_ns + "max_exploration_range", max_seek_range_m_, what);
 
   target_reaching_ = 2.0;
-  ros::param::get(robot_on_guide_ns + "target_reaching", target_reaching_);
+  cnr::param::get(robot_on_guide_ns + "target_reaching", target_reaching_, what);
 
   return true;
 }
@@ -532,7 +535,7 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
 
   std::vector<double> ray;
   size_t idx = 0;
-  for (idx = 0; idx < (size_t)_max_stall_iterations && robot_on_guide_nh_.ok(); idx++)
+  for (idx = 0; idx < (size_t)_max_stall_iterations; idx++)
   {
     Eigen::VectorXd robot_seed(attached_robot_->joint_names().size());
     Eigen::VectorXd guide_seed(guide_.chain_->getActiveJointsNumber());
