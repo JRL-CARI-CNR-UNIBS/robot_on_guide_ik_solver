@@ -32,10 +32,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <Eigen/Geometry>
 #include <string>
 #include <memory>
-//#include <boost/shared_ptr.hpp>
 #include "rdyn_core/internal/types.h"
 
-//#include <ros/node_handle.h>
 #include <rclcpp/rclcpp.hpp>
 #include <pluginlib/class_loader.hpp>
 #include <rdyn_core/primitives.h>
@@ -83,7 +81,7 @@ protected:
 
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
 
-  boost::shared_ptr<ik_solver::IkSolver> attached_robot_;
+  std::shared_ptr<ik_solver::IkSolver> attached_robot_;
 
   double target_reaching_ = 2.0;
   struct Chain
