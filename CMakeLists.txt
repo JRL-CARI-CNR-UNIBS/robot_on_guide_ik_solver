@@ -27,7 +27,7 @@ ament_target_dependencies(${PROJECT_NAME} PUBLIC
   ik_solver
   tf2_ros)
 target_link_libraries(${PROJECT_NAME} PUBLIC
-  rdyn_core)
+  rdyn_core::rdyn_core)
 target_include_directories(${PROJECT_NAME} PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>"
   "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>"
