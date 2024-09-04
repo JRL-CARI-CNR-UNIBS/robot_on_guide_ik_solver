@@ -26,48 +26,81 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#pragma once
+#ifndef ROBOT_ON_GUIDE_IK_SOLVER__ROBOT_ON_GUIDE_IK_SOLVER_H
+#define ROBOT_ON_GUIDE_IK_SOLVER__ROBOT_ON_GUIDE_IK_SOLVER_H
 
-#include <ros/ros.h>
-#include <tf/transform_listener.h>
 #include <Eigen/Geometry>
-#include <ik_solver_msgs/GetIk.h>
-#include <ik_solver_msgs/GetIkArray.h>
-#include <tf_conversions/tf_eigen.h>
-#include <eigen_conversions/eigen_msg.h>
-#include <ik_solver/ik_solver_base_class.h>
-#include <pluginlib/class_loader.h>
-#include <rosdyn_core/primitives.h>
+#include <string>
+#include <memory>
+#include "rdyn_core/internal/types.h"
+
+#include <rclcpp/rclcpp.hpp>
+#include <pluginlib/class_loader.hpp>
+#include <rdyn_core/primitives.h>
+#include <ik_solver/ik_solver.hpp>
 
 #define TOLERANCE 1e-3
 namespace ik_solver
 {
 
+double axes_distance(const Eigen::Vector3d& V, const Eigen::Vector3d& uv, const Eigen::Vector3d& R, const Eigen::Vector3d& ur);
+bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& uv, const double& r, const Eigen::Vector3d& cylinder_ax, bool closest_to_lb=true);
+bool cylinder_ray_intersection(Eigen::Vector3d& K, const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub, const double& r, const Eigen::Vector3d& cylinder_ax, bool closest_to_lb=true);
+double compute_polar_reaching(const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& ray, const Eigen::Vector3d& cylinder_ax);
+double compute_polar_reaching(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub, const Eigen::Vector3d& cylinder_ax);
+Eigen::Vector3d project(const Eigen::Vector3d& P, const Eigen::Vector3d& A, const Eigen::Vector3d& u);
+Eigen::Vector3d project(const Eigen::Affine3d& p, const Eigen::Affine3d& lb, const Eigen::Affine3d& ub);
 
-
-class RobotOnGuideIkSolver: public IkSolver
+class RobotOnGuideIkSolver : public IkSolver
 {
 public:
-  virtual std::vector<Eigen::VectorXd> getIk(const Eigen::Affine3d& T_base_flange,
-                                     const std::vector<Eigen::VectorXd> & seeds,
-                                     const int& desired_solutions,
-                                     const int& max_stall_iterations) override;
+  RobotOnGuideIkSolver() : ikloader_(nullptr) {};
+  RobotOnGuideIkSolver(const RobotOnGuideIkSolver&) = delete;
+  RobotOnGuideIkSolver(const RobotOnGuideIkSolver&&) = delete;
+  RobotOnGuideIkSolver(RobotOnGuideIkSolver&&) = delete;
+  virtual ~RobotOnGuideIkSolver() = default;
+
+  virtual bool config(const std::string& params_ns) override;
+  virtual Solutions getIk(const Eigen::Affine3d& T_base_flange, const Configurations& seeds,
+                                 const int& desired_solutions = -1, const int& min_stall_iterations = -1, const int& max_stall_iterations = -1) override;
 
 
-  virtual Eigen::Affine3d getFK(const Eigen::VectorXd& s) override;
+  virtual Eigen::Affine3d getFK(const Configuration& s) override;
+
+  rdyn::ChainPtr guide() { return guide_.chain_;}
+  Eigen::Affine3d le() { return guide_.le_;}
+  Eigen::Affine3d ue() { return guide_.ue_;}
+
 protected:
-  virtual bool customConfig() override;
+  
+//  rclcpp::Node::SharedPtr robot_on_guide_nh_; // all the information of the full chain
+//  rclcpp::Node::SharedPtr attached_robot_nh_; // only the attached robot infos
 
-  rosdyn::ChainPtr chain_;
-  boost::shared_ptr<ik_solver::IkSolver> robot_ik_solver_;
-  ros::NodeHandle robot_nh_;
-
-  Eigen::VectorXd guide_seed_;
-  Eigen::VectorXd mean_q_;
-  Eigen::VectorXd dq_;
-
+  std::string robot_on_guide_ns_;
+  std::string attached_robot_ns_;
 
   std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ikloader_;
 
+  std::shared_ptr<ik_solver::IkSolver> attached_robot_;
+
+  double target_reaching_ = 2.0;
+  struct Chain
+  {
+    rdyn::ChainPtr chain_;
+    Configuration    jstroke_;
+    Configuration    jax_;
+    Eigen::Affine3d  le_;
+    Eigen::Affine3d  ue_;
+    Eigen::Vector3d  pstroke_;
+    Eigen::Vector3d  pax_;
+  } guide_;
+
+  std::string plugin_name_;
+  double max_seek_range_m_ = 0.1;  //
+  
 };
+
+
 }  //  namespace ik_solver
+
+#endif  // ROBOT_ON_GUIDE_IK_SOLVER__ROBOT_ON_GUIDE_IK_SOLVER_H
