@@ -37,7 +37,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <rclcpp/rclcpp.hpp>
 #include <pluginlib/class_loader.hpp>
 #include <rdyn_core/primitives.h>
-#include <ik_solver_core/ik_solver_base_class.h>
+#include <ik_solver/ik_solver.hpp>
 
 #define TOLERANCE 1e-3
 namespace ik_solver
