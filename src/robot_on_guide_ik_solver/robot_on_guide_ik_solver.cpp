@@ -419,6 +419,10 @@ inline bool RobotOnGuideIkSolver::config(const std::string& params_ns)
     }
   }
 
+  CNR_INFO(logger_, "%s creating ik plugin for mounted robot", attached_robot_ns.c_str());
+  std::string plugin_name;
+  cnr::param::get(attached_robot_ns + "type", plugin_name, what);
+
   // INIT GUIDE CHAIN
   std::string mounted_robot_base_frame;
   cnr::param::get(attached_robot_ns + "base_frame", mounted_robot_base_frame, what);
@@ -451,13 +455,10 @@ inline bool RobotOnGuideIkSolver::config(const std::string& params_ns)
     ikloader_.reset(new pluginlib::ClassLoader<ik_solver::IkSolver>("ik_solver", "ik_solver::IkSolver"));
   }
 
-  CNR_INFO(logger_, "%s creating ik plugin for mounted robot", attached_robot_ns.c_str());
 
   guide_.chain_->setInputJointsName(guide_names, what);
 
-  CNR_INFO(logger_, "%s creating ik plugin for mounted robot", attached_robot_ns.c_str());
-  std::string plugin_name;
-  cnr::param::get(attached_robot_ns + "type", plugin_name, what);
+
   if (!attached_robot_)  //  in the case I call configure the second time this is not necessary
   {
     attached_robot_ = ikloader_->createUniqueInstance(plugin_name);
@@ -472,9 +473,19 @@ inline bool RobotOnGuideIkSolver::config(const std::string& params_ns)
       plugin_name_ = plugin_name;
     }
   }
+  CNR_INFO(logger_, "%s created ik plugin for mounted robot", attached_robot_ns.c_str());
 
 //  ros::NodeHandle ik_solver_nh(robot_nh_, "robot_on_guide");
   const std::string ik_solver_ns {robot_on_guide_ns_ + "/" + "robot_on_guide"};
+  attached_robot_->setBuffer(tf_buffer_);
+
+  std::string param_what;
+  if(!cnr::param::set(attached_robot_ns+std::string("/robot_description"), robot_description_, param_what))
+  {
+    CNR_ERROR(logger_, "Cannot set cnr::param(" << attached_robot_ns << std::string("/robot_description") << ") because: " << param_what);
+  }
+  CNR_DEBUG(logger_, "set robot_description as cnr::param");
+
   if (!attached_robot_->config(attached_robot_ns))  // all takes the data from the same naespace,
                                                                   // but they create services in private ns
   {
@@ -498,6 +509,7 @@ inline bool RobotOnGuideIkSolver::config(const std::string& params_ns)
   target_reaching_ = 2.0;
   cnr::param::get(robot_on_guide_ns + "target_reaching", target_reaching_, what);
 
+  CNR_INFO(logger_, "%s configured", attached_robot_ns.c_str());
   return true;
 }
 
@@ -518,8 +530,7 @@ Solutions RobotOnGuideIkSolver::getIk(const Eigen::Affine3d& T_base_flange, cons
   Eigen::Vector3d Ax0 = Eigen::Vector3d::UnitZ();
 
   Eigen::Vector3d ptarget;
-  bool ok =
-      ik_solver::cylinder_ray_intersection(ptarget, T_base_flange, guide_.le_, guide_.ue_, target_reaching_, Ax0, true);
+  bool ok = ik_solver::cylinder_ray_intersection(ptarget, T_base_flange, guide_.le_, guide_.ue_, target_reaching_, Ax0, true);
   if (!ok)
   {
     ptarget = ik_solver::project(T_base_flange, guide_.le_, guide_.ue_);
